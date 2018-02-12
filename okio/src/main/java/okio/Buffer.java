@@ -20,6 +20,8 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.ByteChannel;
 import java.nio.charset.Charset;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
@@ -49,7 +51,7 @@ import static okio.Util.reverseBytesLong;
  * returning it to you. Even if you're going to write over that space anyway.
  * This class avoids zero-fill and GC churn by pooling byte arrays.
  */
-public final class Buffer implements BufferedSource, BufferedSink, Cloneable {
+public final class Buffer implements BufferedSource, BufferedSink, Cloneable, ByteChannel {
   private static final byte[] DIGITS =
       { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
   static final int REPLACEMENT_CHARACTER = '\ufffd';
@@ -811,6 +813,24 @@ public final class Buffer implements BufferedSource, BufferedSink, Cloneable {
     return toCopy;
   }
 
+  @Override public int read(ByteBuffer sink) throws IOException {
+    Segment s = head;
+    if (s == null) return -1;
+
+    int toCopy = Math.min(sink.remaining(), s.limit - s.pos);
+    sink.put(s.data, s.pos, toCopy);
+
+    s.pos += toCopy;
+    size -= toCopy;
+
+    if (s.pos == s.limit) {
+      head = s.pop();
+      SegmentPool.recycle(s);
+    }
+
+    return toCopy;
+  }
+
   /**
    * Discards all bytes in this buffer. Calling this method when you're done
    * with a buffer will return its segments to the pool.
@@ -1006,6 +1026,25 @@ public final class Buffer implements BufferedSource, BufferedSink, Cloneable {
 
     size += byteCount;
     return this;
+  }
+
+  @Override public int write(ByteBuffer source) throws IOException {
+    if (source == null) throw new IllegalArgumentException("source == null");
+
+    int byteCount = source.remaining();
+    int remaining = byteCount;
+    while (remaining > 0) {
+      Segment tail = writableSegment(1);
+
+      int toCopy = Math.min(remaining, Segment.SIZE - tail.limit);
+      source.get(tail.data, tail.limit, toCopy);
+
+      remaining -= toCopy;
+      tail.limit += toCopy;
+    }
+
+    size += byteCount;
+    return byteCount;
   }
 
   @Override public long writeAll(Source source) throws IOException {
@@ -1536,6 +1575,10 @@ public final class Buffer implements BufferedSource, BufferedSink, Cloneable {
   @Override public void flush() {
   }
 
+  @Override public boolean isOpen() {
+    return true;
+  }
+
   @Override public void close() {
   }
 
@@ -2033,14 +2076,19 @@ public final class Buffer implements BufferedSource, BufferedSink, Cloneable {
     }
 
     /**
-     * Change the size of this buffer so that it equals {@code newSize} by either adding new
+     * Change the size of the buffer so that it equals {@code newSize} by either adding new
      * capacity at the end or truncating the buffer at the end. Newly added capacity may span
      * multiple segments.
      *
-     * <p>Warning: it its the caller’s responsibility to write new data to every byte of the
+     * <p>As a side-effect this cursor will {@link #seek seek}. If the buffer is being enlarged it
+     * will move {@link #offset} to the first byte of newly-added capacity. This is the size of the
+     * buffer prior to the {@code resizeBuffer()} call. If the buffer is being shrunk it will move
+     * {@link #offset} to the end of the buffer.
+     *
+     * <p>Warning: it is the caller’s responsibility to write new data to every byte of the
      * newly-allocated capacity. Failure to do so may cause serious security problems as the data
-     * in the returned buffers is not zero filled. The buffers may contain dirty pooled segments
-     * that hold very sensitive data from other parts of the current process.
+     * in the returned buffers is not zero filled. Buffers may contain dirty pooled segments that
+     * hold very sensitive data from other parts of the current process.
      *
      * @return the previous size of the buffer.
      */
@@ -2053,12 +2101,9 @@ public final class Buffer implements BufferedSource, BufferedSink, Cloneable {
       }
 
       long oldSize = buffer.size;
-      if (newSize < oldSize) {
+      if (newSize <= oldSize) {
         if (newSize < 0) {
           throw new IllegalArgumentException("newSize < 0: " + newSize);
-        }
-        if (offset > newSize) {
-          offset = newSize;
         }
         // Shrink the buffer by either shrinking segments or removing them.
         for (long bytesToSubtract = oldSize - newSize; bytesToSubtract > 0; ) {
@@ -2073,23 +2118,89 @@ public final class Buffer implements BufferedSource, BufferedSink, Cloneable {
             break;
           }
         }
+        // Seek to the end.
+        this.segment = null;
+        this.offset = newSize;
+        this.data = null;
+        this.start = -1;
+        this.end = -1;
       } else if (newSize > oldSize) {
         // Enlarge the buffer by either enlarging segments or adding them.
+        boolean needsToSeek = true;
         for (long bytesToAdd = newSize - oldSize; bytesToAdd > 0; ) {
           Segment tail = buffer.writableSegment(1);
-          long segmentBytesToAdd = Math.min(bytesToAdd, Segment.SIZE - tail.limit);
+          int segmentBytesToAdd = (int) Math.min(bytesToAdd, Segment.SIZE - tail.limit);
           tail.limit += segmentBytesToAdd;
           bytesToAdd -= segmentBytesToAdd;
+
+          // If this is the first segment we're adding, seek to it.
+          if (needsToSeek) {
+            this.segment = tail;
+            this.offset = oldSize;
+            this.data = tail.data;
+            this.start = tail.limit - segmentBytesToAdd;
+            this.end = tail.limit;
+            needsToSeek = false;
+          }
         }
       }
 
       buffer.size = newSize;
 
-      // Buffer.writableSegment() invalidates our local segment state. Recompute it.
-      segment = null;
-      if (offset != -1L) seek(offset);
-
       return oldSize;
+    }
+
+    /**
+     * Grow the buffer by adding a <strong>contiguous range</strong> of capacity in a single
+     * segment. This adds at least {@code minByteCount} bytes but may add up to a full segment of
+     * additional capacity.
+     *
+     * <p>As a side-effect this cursor will {@link #seek seek}. It will move {@link #offset} to the
+     * first byte of newly-added capacity. This is the size of the buffer prior to the {@code
+     * expandBuffer()} call.
+     *
+     * <p>If {@code minByteCount} bytes are available in the buffer's current tail segment that will
+     * be used; otherwise another segment will be allocated and appended. In either case this
+     * returns the number of bytes of capacity added to this buffer.
+     *
+     * <p>Warning: it is the caller’s responsibility to either write new data to every byte of the
+     * newly-allocated capacity, or to {@link #resizeBuffer shrink} the buffer to the data written.
+     * Failure to do so may cause serious security problems as the data in the returned buffers is
+     * not zero filled. Buffers may contain dirty pooled segments that hold very sensitive data from
+     * other parts of the current process.
+     *
+     * @param minByteCount the size of the contiguous capacity. Must be positive and not greater
+     *     than the capacity size of a single segment (8 KiB).
+     * @return the number of bytes expanded by. Not less than {@code minByteCount}.
+     */
+    public long expandBuffer(int minByteCount) {
+      if (minByteCount <= 0) {
+        throw new IllegalArgumentException("minByteCount <= 0: " + minByteCount);
+      }
+      if (minByteCount > Segment.SIZE) {
+        throw new IllegalArgumentException("minByteCount > Segment.SIZE: " + minByteCount);
+      }
+      if (buffer == null) {
+        throw new IllegalStateException("not attached to a buffer");
+      }
+      if (!readWrite) {
+        throw new IllegalStateException("expandBuffer() only permitted for read/write buffers");
+      }
+
+      long oldSize = buffer.size;
+      Segment tail = buffer.writableSegment(minByteCount);
+      int result = Segment.SIZE - tail.limit;
+      tail.limit = Segment.SIZE;
+      buffer.size = oldSize + result;
+
+      // Seek to the old size.
+      this.segment = tail;
+      this.offset = oldSize;
+      this.data = tail.data;
+      this.start = Segment.SIZE - result;
+      this.end = Segment.SIZE;
+
+      return result;
     }
 
     @Override public void close() {
