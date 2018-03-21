@@ -25,9 +25,13 @@ import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import javax.annotation.Nullable;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 import static okio.Util.arrayRangeEquals;
 import static okio.Util.checkOffsetAndCount;
@@ -79,6 +83,14 @@ public class ByteString implements Serializable, Comparable<ByteString> {
 
     byte[] copy = new byte[byteCount];
     System.arraycopy(data, offset, copy, 0, byteCount);
+    return new ByteString(copy);
+  }
+
+  public static ByteString of(ByteBuffer data) {
+    if (data == null) throw new IllegalArgumentException("data == null");
+
+    byte[] copy = new byte[data.remaining()];
+    data.get(copy);
     return new ByteString(copy);
   }
 
@@ -134,11 +146,43 @@ public class ByteString implements Serializable, Comparable<ByteString> {
     return digest("SHA-256");
   }
 
+  /** Returns the 512-bit SHA-512 hash of this byte string. */
+  public ByteString sha512() {
+    return digest("SHA-512");
+  }
+
   private ByteString digest(String algorithm) {
     try {
       return ByteString.of(MessageDigest.getInstance(algorithm).digest(data));
     } catch (NoSuchAlgorithmException e) {
       throw new AssertionError(e);
+    }
+  }
+
+  /** Returns the 160-bit SHA-1 HMAC of this byte string. */
+  public ByteString hmacSha1(ByteString key) {
+    return hmac("HmacSHA1", key);
+  }
+
+  /** Returns the 256-bit SHA-256 HMAC of this byte string. */
+  public ByteString hmacSha256(ByteString key) {
+    return hmac("HmacSHA256", key);
+  }
+
+  /** Returns the 512-bit SHA-512 HMAC of this byte string. */
+  public ByteString hmacSha512(ByteString key) {
+    return hmac("HmacSHA512", key);
+  }
+
+  private ByteString hmac(String algorithm, ByteString key) {
+    try {
+      Mac mac = Mac.getInstance(algorithm);
+      mac.init(new SecretKeySpec(key.toByteArray(), algorithm));
+      return ByteString.of(mac.doFinal(data));
+    } catch (NoSuchAlgorithmException e) {
+      throw new AssertionError(e);
+    } catch (InvalidKeyException e) {
+      throw new IllegalArgumentException(e);
     }
   }
 
@@ -154,7 +198,7 @@ public class ByteString implements Serializable, Comparable<ByteString> {
    * Decodes the Base64-encoded bytes and returns their value as a byte string.
    * Returns null if {@code base64} is not a Base64-encoded sequence of bytes.
    */
-  public static ByteString decodeBase64(String base64) {
+  public static @Nullable ByteString decodeBase64(String base64) {
     if (base64 == null) throw new IllegalArgumentException("base64 == null");
     byte[] decoded = Base64.decode(base64);
     return decoded != null ? new ByteString(decoded) : null;
@@ -361,12 +405,12 @@ public class ByteString implements Serializable, Comparable<ByteString> {
     return rangeEquals(0, prefix, 0, prefix.length);
   }
 
-  public final boolean endsWith(ByteString prefix) {
-    return rangeEquals(size() - prefix.size(), prefix, 0, prefix.size());
+  public final boolean endsWith(ByteString suffix) {
+    return rangeEquals(size() - suffix.size(), suffix, 0, suffix.size());
   }
 
-  public final boolean endsWith(byte[] prefix) {
-    return rangeEquals(size() - prefix.length, prefix, 0, prefix.length);
+  public final boolean endsWith(byte[] suffix) {
+    return rangeEquals(size() - suffix.length, suffix, 0, suffix.length);
   }
 
   public final int indexOf(ByteString other) {

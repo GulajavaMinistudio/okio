@@ -30,6 +30,7 @@ import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.annotation.Nullable;
 import org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement;
 
 import static okio.Util.checkOffsetAndCount;
@@ -113,6 +114,7 @@ public final class Okio {
    */
   public static Sink sink(Socket socket) throws IOException {
     if (socket == null) throw new IllegalArgumentException("socket == null");
+    if (socket.getOutputStream() == null) throw new IOException("socket's output stream == null");
     AsyncTimeout timeout = timeout(socket);
     Sink sink = sink(socket.getOutputStream(), timeout);
     return timeout.sink(sink);
@@ -199,13 +201,15 @@ public final class Okio {
         source.skip(byteCount);
       }
 
-      @Override public void flush() throws IOException {}
+      @Override public void flush() throws IOException {
+      }
 
       @Override public Timeout timeout() {
         return Timeout.NONE;
       }
 
-      @Override public void close() throws IOException {}
+      @Override public void close() throws IOException {
+      }
     };
   }
 
@@ -216,6 +220,7 @@ public final class Okio {
    */
   public static Source source(Socket socket) throws IOException {
     if (socket == null) throw new IllegalArgumentException("socket == null");
+    if (socket.getInputStream() == null) throw new IOException("socket's input stream == null");
     AsyncTimeout timeout = timeout(socket);
     Source source = source(socket.getInputStream(), timeout);
     return timeout.source(source);
@@ -223,7 +228,7 @@ public final class Okio {
 
   private static AsyncTimeout timeout(final Socket socket) {
     return new AsyncTimeout() {
-      @Override protected IOException newTimeoutException(IOException cause) {
+      @Override protected IOException newTimeoutException(@Nullable IOException cause) {
         InterruptedIOException ioe = new SocketTimeoutException("timeout");
         if (cause != null) {
           ioe.initCause(cause);

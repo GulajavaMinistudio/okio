@@ -18,6 +18,7 @@ package okio;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -106,6 +107,16 @@ public final class ByteStringTest {
     ByteString byteString = ByteString.of(bytes, 2, 9);
     // Verify that the bytes were copied out.
     bytes[4] = (byte) 'a';
+    assertEquals("llo, Worl", byteString.utf8());
+  }
+
+  @Test public void ofByteBuffer() {
+    byte[] bytes = "Hello, World!".getBytes(Util.UTF_8);
+    ByteBuffer byteBuffer = ByteBuffer.wrap(bytes);
+    byteBuffer.position(2).limit(11);
+    ByteString byteString = ByteString.of(byteBuffer);
+    // Verify that the bytes were copied out.
+    byteBuffer.put(4, (byte) 'a');
     assertEquals("llo, Worl", byteString.utf8());
   }
 
@@ -250,6 +261,7 @@ public final class ByteStringTest {
     assertEquals(3, byteString.lastIndexOf(ByteString.decodeHex("").toByteArray()));
   }
 
+  @SuppressWarnings("SelfEquals")
   @Test public void equals() throws Exception {
     ByteString byteString = factory.decodeHex("000102");
     assertTrue(byteString.equals(byteString));

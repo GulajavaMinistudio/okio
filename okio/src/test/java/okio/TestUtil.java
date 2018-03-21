@@ -89,6 +89,7 @@ final class TestUtil {
     return new String(array);
   }
 
+  @SuppressWarnings("SelfEquals")
   public static void assertEquivalent(ByteString b1, ByteString b2) {
     // Equals.
     assertTrue(b1.equals(b2));
@@ -125,6 +126,7 @@ final class TestUtil {
     }
   }
 
+  @SuppressWarnings("SelfEquals")
   public static void assertEquivalent(Buffer b1, Buffer b2) {
     // Equals.
     assertTrue(b1.equals(b2));
@@ -194,6 +196,24 @@ final class TestUtil {
       result.write(segment, byteCount);
     }
 
+    return result;
+  }
+
+  /**
+   * Returns a new buffer containing the contents of {@code segments}, attempting to isolate each
+   * string to its own segment in the returned buffer. This clones buffers so that segments are
+   * shared, preventing compaction from occurring.
+   */
+  public static Buffer bufferWithSegments(String... segments) throws Exception {
+    Buffer result = new Buffer();
+    for (String s : segments) {
+      int offsetInSegment = s.length() < Segment.SIZE ? (Segment.SIZE - s.length()) / 2 : 0;
+      Buffer buffer = new Buffer();
+      buffer.writeUtf8(repeat('_', offsetInSegment));
+      buffer.writeUtf8(s);
+      buffer.skip(offsetInSegment);
+      result.write(buffer.clone(), buffer.size);
+    }
     return result;
   }
 }

@@ -16,8 +16,12 @@
 package okio;
 
 import java.io.IOException;
+import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import javax.annotation.Nullable;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 import static okio.Util.checkOffsetAndCount;
 
@@ -38,7 +42,8 @@ import static okio.Util.checkOffsetAndCount;
  * }</pre>
  */
 public final class HashingSink extends ForwardingSink {
-  private final MessageDigest messageDigest;
+  private final @Nullable MessageDigest messageDigest;
+  private final @Nullable Mac mac;
 
   /** Returns a sink that uses the obsolete MD5 hash algorithm to produce 128-bit hashes. */
   public static HashingSink md5(Sink sink) {
@@ -55,12 +60,46 @@ public final class HashingSink extends ForwardingSink {
     return new HashingSink(sink, "SHA-256");
   }
 
+  /** Returns a sink that uses the SHA-512 hash algorithm to produce 512-bit hashes. */
+  public static HashingSink sha512(Sink sink) {
+    return new HashingSink(sink, "SHA-512");
+  }
+
+  /** Returns a sink that uses the obsolete SHA-1 HMAC algorithm to produce 160-bit hashes. */
+  public static HashingSink hmacSha1(Sink sink, ByteString key) {
+    return new HashingSink(sink, key, "HmacSHA1");
+  }
+
+  /** Returns a sink that uses the SHA-256 HMAC algorithm to produce 256-bit hashes. */
+  public static HashingSink hmacSha256(Sink sink, ByteString key) {
+    return new HashingSink(sink, key, "HmacSHA256");
+  }
+
+  /** Returns a sink that uses the SHA-512 HMAC algorithm to produce 512-bit hashes. */
+  public static HashingSink hmacSha512(Sink sink, ByteString key) {
+    return new HashingSink(sink, key, "HmacSHA512");
+  }
+
   private HashingSink(Sink sink, String algorithm) {
     super(sink);
     try {
       this.messageDigest = MessageDigest.getInstance(algorithm);
+      this.mac = null;
     } catch (NoSuchAlgorithmException e) {
       throw new AssertionError();
+    }
+  }
+
+  private HashingSink(Sink sink, ByteString key, String algorithm) {
+    super(sink);
+    try {
+      this.mac = Mac.getInstance(algorithm);
+      this.mac.init(new SecretKeySpec(key.toByteArray(), algorithm));
+      this.messageDigest = null;
+    } catch (NoSuchAlgorithmException e) {
+      throw new AssertionError();
+    } catch (InvalidKeyException e) {
+      throw new IllegalArgumentException(e);
     }
   }
 
@@ -71,7 +110,11 @@ public final class HashingSink extends ForwardingSink {
     long hashedCount = 0;
     for (Segment s = source.head; hashedCount < byteCount; s = s.next) {
       int toHash = (int) Math.min(byteCount - hashedCount, s.limit - s.pos);
-      messageDigest.update(s.data, s.pos, toHash);
+      if (messageDigest != null) {
+        messageDigest.update(s.data, s.pos, toHash);
+      } else {
+        mac.update(s.data, s.pos, toHash);
+      }
       hashedCount += toHash;
     }
 
@@ -86,7 +129,7 @@ public final class HashingSink extends ForwardingSink {
    * internal state is cleared. This starts a new hash with zero bytes accepted.
    */
   public ByteString hash() {
-    byte[] result = messageDigest.digest();
+    byte[] result = messageDigest != null ? messageDigest.digest() : mac.doFinal();
     return ByteString.of(result);
   }
 }

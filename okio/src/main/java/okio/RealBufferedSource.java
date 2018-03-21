@@ -18,7 +18,9 @@ package okio;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import javax.annotation.Nullable;
 
 import static okio.Util.checkOffsetAndCount;
 
@@ -144,6 +146,15 @@ final class RealBufferedSource implements BufferedSource {
     return buffer.read(sink, offset, toRead);
   }
 
+  @Override public int read(ByteBuffer sink) throws IOException {
+    if (buffer.size == 0) {
+      long read = source.read(buffer, Segment.SIZE);
+      if (read == -1) return -1;
+    }
+
+    return buffer.read(sink);
+  }
+
   @Override public void readFully(Buffer sink, long byteCount) throws IOException {
     try {
       require(byteCount);
@@ -196,7 +207,7 @@ final class RealBufferedSource implements BufferedSource {
     return buffer.readString(byteCount, charset);
   }
 
-  @Override public String readUtf8Line() throws IOException {
+  @Override public @Nullable String readUtf8Line() throws IOException {
     long newline = indexOf((byte) '\n');
 
     if (newline == -1) {
@@ -207,14 +218,23 @@ final class RealBufferedSource implements BufferedSource {
   }
 
   @Override public String readUtf8LineStrict() throws IOException {
-    long newline = indexOf((byte) '\n');
-    if (newline == -1L) {
-      Buffer data = new Buffer();
-      buffer.copyTo(data, 0, Math.min(32, buffer.size()));
-      throw new EOFException("\\n not found: size=" + buffer.size()
-          + " content=" + data.readByteString().hex() + "…");
+    return readUtf8LineStrict(Long.MAX_VALUE);
+  }
+
+  @Override public String readUtf8LineStrict(long limit) throws IOException {
+    if (limit < 0) throw new IllegalArgumentException("limit < 0: " + limit);
+    long scanLength = limit == Long.MAX_VALUE ? Long.MAX_VALUE : limit + 1;
+    long newline = indexOf((byte) '\n', 0, scanLength);
+    if (newline != -1) return buffer.readUtf8Line(newline);
+    if (scanLength < Long.MAX_VALUE
+        && request(scanLength) && buffer.getByte(scanLength - 1) == '\r'
+        && request(scanLength + 1) && buffer.getByte(scanLength) == '\n') {
+      return buffer.readUtf8Line(scanLength); // The line was 'limit' UTF-8 bytes followed by \r\n.
     }
-    return buffer.readUtf8Line(newline);
+    Buffer data = new Buffer();
+    buffer.copyTo(data, 0, Math.min(32, buffer.size()));
+    throw new EOFException("\\n not found: limit=" + Math.min(buffer.size(), limit)
+        + " content=" + data.readByteString().hex() + '…');
   }
 
   @Override public int readUtf8CodePoint() throws IOException {
@@ -311,22 +331,33 @@ final class RealBufferedSource implements BufferedSource {
   }
 
   @Override public long indexOf(byte b) throws IOException {
-    return indexOf(b, 0);
+    return indexOf(b, 0, Long.MAX_VALUE);
   }
 
   @Override public long indexOf(byte b, long fromIndex) throws IOException {
+    return indexOf(b, fromIndex, Long.MAX_VALUE);
+  }
+
+  @Override public long indexOf(byte b, long fromIndex, long toIndex) throws IOException {
     if (closed) throw new IllegalStateException("closed");
+    if (fromIndex < 0 || toIndex < fromIndex) {
+      throw new IllegalArgumentException(
+          String.format("fromIndex=%s toIndex=%s", fromIndex, toIndex));
+    }
 
-    while (true) {
-      long result = buffer.indexOf(b, fromIndex);
-      if (result != -1) return result;
+    while (fromIndex < toIndex) {
+      long result = buffer.indexOf(b, fromIndex, toIndex);
+      if (result != -1L) return result;
 
+      // The byte wasn't in the buffer. Give up if we've already reached our target size or if the
+      // underlying stream is exhausted.
       long lastBufferSize = buffer.size;
-      if (source.read(buffer, Segment.SIZE) == -1) return -1L;
+      if (lastBufferSize >= toIndex || source.read(buffer, Segment.SIZE) == -1) return -1L;
 
-      // Keep searching, picking up from where we left off.
+      // Continue the search from where we left off.
       fromIndex = Math.max(fromIndex, lastBufferSize);
     }
+    return -1L;
   }
 
   @Override public long indexOf(ByteString bytes) throws IOException {
@@ -426,6 +457,10 @@ final class RealBufferedSource implements BufferedSource {
         return RealBufferedSource.this + ".inputStream()";
       }
     };
+  }
+
+  @Override public boolean isOpen() {
+    return !closed;
   }
 
   @Override public void close() throws IOException {

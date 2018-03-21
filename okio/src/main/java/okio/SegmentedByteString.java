@@ -50,8 +50,8 @@ import static okio.Util.checkOffsetAndCount;
  * binary search. We use one array rather than two for the directory as a micro-optimization.
  */
 final class SegmentedByteString extends ByteString {
-  transient final byte[][] segments;
-  transient final int[] directory;
+  final transient byte[][] segments;
+  final transient int[] directory;
 
   SegmentedByteString(Buffer buffer, int byteCount) {
     super(null);
@@ -122,6 +122,14 @@ final class SegmentedByteString extends ByteString {
     return toByteString().sha256();
   }
 
+  @Override public ByteString hmacSha1(ByteString key) {
+    return toByteString().hmacSha1(key);
+  }
+
+  @Override public ByteString hmacSha256(ByteString key) {
+    return toByteString().hmacSha256(key);
+  }
+
   @Override public String base64Url() {
     return toByteString().base64Url();
   }
@@ -187,7 +195,7 @@ final class SegmentedByteString extends ByteString {
       int segmentPos = directory[segmentCount + s];
       int nextSegmentOffset = directory[s];
       Segment segment = new Segment(segments[s], segmentPos,
-          segmentPos + nextSegmentOffset - segmentOffset);
+          segmentPos + nextSegmentOffset - segmentOffset, true, false);
       if (buffer.head == null) {
         buffer.head = segment.next = segment.prev = segment;
       } else {

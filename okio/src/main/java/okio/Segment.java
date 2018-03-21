@@ -15,6 +15,8 @@
  */
 package okio;
 
+import javax.annotation.Nullable;
+
 /**
  * A segment of a buffer.
  *
@@ -63,24 +65,34 @@ final class Segment {
     this.shared = false;
   }
 
-  Segment(Segment shareFrom) {
-    this(shareFrom.data, shareFrom.pos, shareFrom.limit);
-    shareFrom.shared = true;
-  }
-
-  Segment(byte[] data, int pos, int limit) {
+  Segment(byte[] data, int pos, int limit, boolean shared, boolean owner) {
     this.data = data;
     this.pos = pos;
     this.limit = limit;
-    this.owner = false;
-    this.shared = true;
+    this.shared = shared;
+    this.owner = owner;
+  }
+
+  /**
+   * Returns a new segment that shares the underlying byte array with this. Adjusting pos and limit
+   * are safe but writes are forbidden. This also marks the current segment as shared, which
+   * prevents it from being pooled.
+   */
+  Segment sharedCopy() {
+    shared = true;
+    return new Segment(data, pos, limit, true, false);
+  }
+
+  /** Returns a new segment that its own private copy of the underlying byte array. */
+  Segment unsharedCopy() {
+    return new Segment(data.clone(), pos, limit, false, true);
   }
 
   /**
    * Removes this segment of a circularly-linked list and returns its successor.
    * Returns null if the list is now empty.
    */
-  public Segment pop() {
+  public @Nullable Segment pop() {
     Segment result = next != this ? next : null;
     prev.next = next;
     next.prev = prev;
@@ -119,7 +131,7 @@ final class Segment {
     //    may lead to long chains of short segments.
     // To balance these goals we only share segments when the copy will be large.
     if (byteCount >= SHARE_MINIMUM) {
-      prefix = new Segment(this);
+      prefix = sharedCopy();
     } else {
       prefix = SegmentPool.take();
       System.arraycopy(data, pos, prefix.data, 0, byteCount);
