@@ -1,21 +1,30 @@
-description = 'Okio'
-
 apply plugin: 'java-library'
-apply plugin: 'osgi'
 apply plugin: 'org.jetbrains.kotlin.platform.jvm'
 apply plugin: 'ru.vyarus.animalsniffer'
+apply plugin: 'me.champeau.gradle.japicmp'
+apply plugin: 'me.champeau.gradle.jmh'
+
+apply from: "$rootDir/gradle/gradle-mvn-push.gradle"
 
 sourceCompatibility = JavaVersion.VERSION_1_7
 targetCompatibility = JavaVersion.VERSION_1_7
 
 jar {
   manifest {
-    instruction 'Automatic-Module-Name', 'okio'
+    attributes('Automatic-Module-Name': 'okio')
   }
 }
 
 animalsniffer {
   sourceSets = [sourceSets.main]
+}
+
+configurations {
+  baseline
+}
+
+jmh {
+  duplicateClassesStrategy = 'warn'
 }
 
 dependencies {
@@ -25,5 +34,27 @@ dependencies {
   compileOnly deps.animalSniffer.annotations
   compileOnly deps.jsr305
   testImplementation deps.test.junit
+  testImplementation deps.test.assertj
   testImplementation deps.kotlin.test.jdk
+
+  baseline('com.squareup.okio:okio:1.14.0') {
+    transitive = false
+    force = true
+  }
+
+  jmh deps.jmh.core
+  jmh deps.jmh.generator
 }
+
+task japicmp(type: me.champeau.gradle.japicmp.JapicmpTask, dependsOn: 'jar') {
+  oldClasspath = configurations.baseline
+  newClasspath = files(jar.archivePath)
+  onlyBinaryIncompatibleModified = true
+  failOnModification = true
+  txtOutputFile = file("$buildDir/reports/japi.txt")
+  ignoreMissingClasses = true
+  includeSynthetic = true
+}
+check.dependsOn(japicmp)
+
+assemble.dependsOn(tasks['jmhJar'])

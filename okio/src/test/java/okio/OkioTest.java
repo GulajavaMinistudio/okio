@@ -25,8 +25,8 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import static kotlin.text.Charsets.UTF_8;
 import static okio.TestUtil.repeat;
-import static okio.Util.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -132,8 +132,10 @@ public final class OkioTest {
     try {
       Okio.buffer((Sink) null);
       fail();
-    } catch (NullPointerException expected) {
-      assertEquals("sink == null", expected.getMessage());
+    } catch (IllegalArgumentException expected) {
+      assertEquals(
+          "Parameter specified as non-null is null: method okio.Okio.buffer, parameter $receiver",
+          expected.getMessage());
     }
   }
 
@@ -141,8 +143,10 @@ public final class OkioTest {
     try {
       Okio.buffer((Source) null);
       fail();
-    } catch (NullPointerException expected) {
-      assertEquals("source == null", expected.getMessage());
+    } catch (IllegalArgumentException expected) {
+      assertEquals(
+          "Parameter specified as non-null is null: method okio.Okio.buffer, parameter $receiver",
+          expected.getMessage());
     }
   }
 

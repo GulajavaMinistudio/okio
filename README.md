@@ -2,7 +2,9 @@ Okio
 ====
 
 Okio is a library that complements `java.io` and `java.nio` to make it much
-easier to access, store, and process your data.
+easier to access, store, and process your data. It started as a component of
+[OkHttp][1], the capable HTTP client included in Android. It's well-exercised
+and ready to solve new problems.
 
 ByteStrings and Buffers
 -----------------------
@@ -62,17 +64,189 @@ Sources and sinks interoperate with `InputStream` and `OutputStream`. You can
 view any `Source` as an `InputStream`, and you can view any `InputStream` as a
 `Source`. Similarly for `Sink` and `OutputStream`.
 
-Dependable
-----------
+Recipes
+-------
 
-Okio started as a component of [OkHttp][1], the capable HTTP+SPDY client
-included in Android. It's well-exercised and ready to solve new problems.
+We've written some recipes that demonstrate how to solve common problems with
+Okio. Read through them to learn about how everything works together.
+Cut-and-paste these examples freely; that's what they're for.
 
+### [Read a text file line-by-line](https://github.com/square/okio/blob/master/samples/src/main/java/okio/samples/ReadFileLineByLine.java)
 
-Example: a PNG decoder
-----------------------
+Use `Okio.source(File)` to open a source stream to read a file. The returned
+`Source` interface is very small and has limited uses. Instead we wrap the
+source with a buffer. This has two benefits:
 
-Decoding the chunks of a PNG file demonstrates Okio in practice.
+ * **It makes the API more powerful.** Instead of the basic methods offered by
+   `Source`, `BufferedSource` has dozens of methods to address most common
+   problems concisely.
+
+ * **It makes your program run faster.** Buffering allows Okio to get more done
+   with fewer I/O operations.
+
+Each `Source` that is opened needs to be closed. The code that opens the stream
+is responsible for making sure it is closed. Here we use Java's `try` blocks to
+close our sources automatically.
+
+```java
+public void readLines(File file) throws IOException {
+  try (Source fileSource = Okio.source(file);
+       BufferedSource bufferedSource = Okio.buffer(fileSource)) {
+
+    while (true) {
+      String line = bufferedSource.readUtf8Line();
+      if (line == null) break;
+
+      if (line.contains("square")) {
+        System.out.println(line);
+      }
+    }
+
+  }
+}
+```
+
+The `readUtf8Line()` API reads all of the data until the next line delimiter –
+either `\n`, `\r\n`, or the end of the file. It returns that data as a string,
+omitting the delimiter at the end. When it encounters empty lines the method
+will return an empty string. If there isn’t any more data to read it will
+return null.
+
+The above program can be written more compactly by inlining the `fileSource`
+variable and by using a fancy `for` loop instead of a `while`:
+
+```java
+public void readLines(File file) throws IOException {
+  try (BufferedSource source = Okio.buffer(Okio.source(file))) {
+    for (String line; (line = source.readUtf8Line()) != null; ) {
+      if (line.contains("square")) {
+        System.out.println(line);
+      }
+    }
+  }
+}
+```
+
+The `readUtf8Line()` method is suitable for parsing most files. For certain
+use-cases you may also consider `readUtf8LineStrict()`. It is similar but it
+requires that each line is terminated by `\n` or `\r\n`. If it encounters the
+end of the file before that it will throw an `EOFException`. The strict variant
+also permits a byte limit to defend against malformed input.
+
+```java
+public void readLines(File file) throws IOException {
+  try (BufferedSource source = Okio.buffer(Okio.source(file))) {
+    while (!source.exhausted()) {
+      String line = source.readUtf8LineStrict(1024L);
+      if (line.contains("square")) {
+        System.out.println(line);
+      }
+    }
+  }
+}
+```
+
+### [Write a text file](https://github.com/square/okio/blob/master/samples/src/main/java/okio/samples/WriteFile.java)
+
+Above we used a `Source` and a `BufferedSource` to read a file. To write, we use
+a `Sink` and a `BufferedSink`. The advantages of buffering are the same: a more
+capable API and better performance.
+
+```java
+public void writeEnv(File file) throws IOException {
+  try (Sink fileSink = Okio.sink(file);
+       BufferedSink bufferedSink = Okio.buffer(fileSink)) {
+
+    for (Map.Entry<String, String> entry : System.getenv().entrySet()) {
+      bufferedSink.writeUtf8(entry.getKey());
+      bufferedSink.writeUtf8("=");
+      bufferedSink.writeUtf8(entry.getValue());
+      bufferedSink.writeUtf8("\n");
+    }
+
+  }
+}
+```
+
+There isn’t an API to write a line of input; instead we manually insert our own
+newline character. Most programs should hardcode `"\n"` as the newline
+character. In rare situations you may use `System.lineSeparator()` instead of
+`"\n"`: it returns `"\r\n"` on Windows and `"\n"` everywhere else.
+
+We can write the above program more compactly by inlining the `fileSink`
+variable and by taking advantage of method chaining:
+
+```java
+public void writeEnv(File file) throws IOException {
+  try (BufferedSink sink = Okio.buffer(Okio.sink(file))) {
+    for (Map.Entry<String, String> entry : System.getenv().entrySet()) {
+      sink.writeUtf8(entry.getKey())
+          .writeUtf8("=")
+          .writeUtf8(entry.getValue())
+          .writeUtf8("\n");
+    }
+  }
+}
+```
+
+In the above code we make four calls to `writeUtf8()`. Making four calls is
+more efficient than the code below because the VM doesn’t have to create and
+garbage collect a temporary string.
+
+```java
+sink.writeUtf8(entry.getKey() + "=" + entry.getValue() + "\n"); // Slower!
+```
+
+### [UTF-8](https://github.com/square/okio/blob/master/samples/src/main/java/okio/samples/ExploreCharsets.java)
+
+In the above APIs you can see that Okio really likes UTF-8. Early computer
+systems suffered many incompatible character encodings: ISO-8859-1, ShiftJIS,
+ASCII, EBCDIC, etc. Writing software to support multiple character sets was
+awful and we didn’t even have emoji! Today we're lucky that the world has
+standardized on UTF-8 everywhere, with some rare uses of other charsets in
+legacy systems.
+
+If you need another character set, `readString()` and `writeString()` are there
+for you. These methods require that you specify a character set. Otherwise you
+may accidentally create data that is only readable by the local computer. Most
+programs should use the UTF-8 methods only.
+
+When encoding strings you need to be mindful of the different ways that strings
+are represented and encoded. When a glyph has an accent or another adornment
+it may be represented as a single complex code point (`é`) or as a simple code
+point (`e`) followed by its modifiers (`´`). When the entire glyph is a single
+code point that’s called [NFC][nfc]; when it’s multiple it’s [NFD][nfd].
+
+Though we use UTF-8 whenever we read or write strings in I/O, when they are in
+memory Java Strings use an obsolete character encoding called UTF-16. It is a
+bad encoding because it uses a 16-bit `char` for most characters, but some don’t
+fit. In particular, most emoji use two Java chars. This is problematic because
+`String.length()` returns a surprising result: the number of UTF-16 chars and
+not the natural number of glyphs.
+
+|                String | Café 🍩                     | Café 🍩                        |
+| --------------------: | :---------------------------| :------------------------------|
+|                  Form | [NFC][nfc]                  | [NFD][nfd]                     |
+|           Code Points | `c  a  f  é    ␣   🍩     ` | `c  a  f  e  ´    ␣   🍩     ` |
+|           UTF-8 bytes | `43 61 66 c3a9 20 f09f8da9` | `43 61 66 65 cc81 20 f09f8da9` |
+| String.codePointCount | 6                           | 7                              |
+|         String.length | 7                           | 8                              |
+|             Utf8.size | 10                          | 11                             |
+
+For the most part Okio lets you ignore these problems and focus on your data.
+But when you need them, there are convenient APIs for dealing with low-level
+UTF-8 strings.
+
+Use `Utf8.size()` to count the number of bytes required to encode a string as
+UTF-8 without actually encoding it. This is handy in length-prefixed encodings
+like protocol buffers.
+
+Use `BufferedSource.readUtf8CodePoint()` to read a single variable-length code
+point, and `BufferedSink.writeUtf8CodePoint()` to write one.
+
+### PNG decoder
+
+Here we decode the chunks of a PNG file.
 
 ```java
 private static final ByteString PNG_HEADER = ByteString.decodeHex("89504e470d0a1a0a");
@@ -109,6 +283,43 @@ private void decodeChunk(String type, Buffer chunk) {
   }
 }
 ```
+
+Okio Benchmarks
+------------
+
+This module contains microbenchmarks that can be used to measure various aspects of performance for Okio buffers. Okio benchmarks are written using JMH (version 1.4.1 at this time) and require Java 7.
+
+#### Running Locally
+
+To run benchmarks locally, first build and package the project modules:
+
+```
+$ mvn clean package
+```
+
+This should create a `benchmarks.jar` file in the `target` directory, which is a typical JMH benchmark JAR:
+
+```
+$ java -jar benchmarks/target/benchmarks.jar -l
+Benchmarks: 
+com.squareup.okio.benchmarks.BufferPerformanceBench.cold
+com.squareup.okio.benchmarks.BufferPerformanceBench.threads16hot
+com.squareup.okio.benchmarks.BufferPerformanceBench.threads1hot
+com.squareup.okio.benchmarks.BufferPerformanceBench.threads2hot
+com.squareup.okio.benchmarks.BufferPerformanceBench.threads32hot
+com.squareup.okio.benchmarks.BufferPerformanceBench.threads4hot
+com.squareup.okio.benchmarks.BufferPerformanceBench.threads8hot
+```
+
+More help is available using the `-h` option. A typical run on Mac OS X looks like:
+
+```
+$ /usr/libexec/java_home -v 1.7 --exec java -jar benchmarks/target/benchmarks.jar \
+"cold" -prof gc,hs_rt,stack -r 60 -t 4 \
+-jvmArgsPrepend "-Xms1G -Xmx1G -XX:+HeapDumpOnOutOfMemoryError"
+```
+
+This executes the "cold" buffer usage benchmark, using the default number of measurement and warm-up iterations, forks, and threads; it adjusts the thread count to 4, iteration time to 60 seconds, fixes the heap size at 1GB and profiles the benchmark using JMH's GC, Hotspot runtime and stack sampling profilers.
 
 Download
 --------
@@ -162,3 +373,6 @@ License
  [7]: https://square.github.io/okio/1.x/okio/okio/BufferedSource.html
  [8]: https://square.github.io/okio/1.x/okio/okio/BufferedSink.html
  [snap]: https://oss.sonatype.org/content/repositories/snapshots/
+ [javadoc]: http://square.github.io/okio/1.x/okio
+ [nfd]: https://docs.oracle.com/javase/7/docs/api/java/text/Normalizer.Form.html#NFD
+ [nfc]: https://docs.oracle.com/javase/7/docs/api/java/text/Normalizer.Form.html#NFC
