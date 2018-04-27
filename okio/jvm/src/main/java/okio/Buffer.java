@@ -549,9 +549,9 @@ public final class Buffer implements BufferedSource, BufferedSink, Cloneable, By
     Segment s = head;
     if (s == null) return options.indexOf(ByteString.EMPTY);
 
-    ByteString[] byteStrings = options.byteStrings;
-    for (int i = 0, listSize = byteStrings.length; i < listSize; i++) {
-      ByteString b = byteStrings[i];
+    // TODO(jwilson): keep a reference to options.byteStrings once Buffer is Kotlin.
+    for (int i = 0, listSize = options.size(); i < listSize; i++) {
+      ByteString b = options.get(i);
       if (size >= b.size() && rangeEquals(s, s.pos, b, 0, b.size())) {
         try {
           skip(b.size());
@@ -571,9 +571,9 @@ public final class Buffer implements BufferedSource, BufferedSink, Cloneable, By
    */
   int selectPrefix(Options options) {
     Segment s = head;
-    ByteString[] byteStrings = options.byteStrings;
-    for (int i = 0, listSize = byteStrings.length; i < listSize; i++) {
-      ByteString b = byteStrings[i];
+    // TODO(jwilson): keep a reference to options.byteStrings once Buffer is Kotlin.
+    for (int i = 0, listSize = options.size(); i < listSize; i++) {
+      ByteString b = options.get(i);
       int bytesLimit = (int) Math.min(size, b.size());
       if (bytesLimit == 0 || rangeEquals(s, s.pos, b, 0, bytesLimit)) {
         return i;
@@ -864,7 +864,8 @@ public final class Buffer implements BufferedSource, BufferedSink, Cloneable, By
 
   @Override public Buffer write(ByteString byteString) {
     if (byteString == null) throw new IllegalArgumentException("byteString == null");
-    byteString.write(this);
+    // TODO(jwilson): use ByteString.write(this) once this is Kotlin and internal APIs work.
+    write(byteString.toByteArray());
     return this;
   }
 
@@ -1504,7 +1505,8 @@ public final class Buffer implements BufferedSource, BufferedSink, Cloneable, By
       }
     } else {
       // Scan through the segments, searching for a byte that's also in the array.
-      byte[] targetByteArray = targetBytes.internalArray();
+      // TODO(jwilson): use ByteString.internalArray() once this is Kotlin and internal APIs work.
+      byte[] targetByteArray = targetBytes.toByteArray();
       while (offset < size) {
         byte[] data = s.data;
         for (int pos = (int) (s.pos + fromIndex - offset), limit = s.limit; pos < limit; pos++) {
