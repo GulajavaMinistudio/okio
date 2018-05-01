@@ -45,9 +45,8 @@ class GzipSink(sink: Sink) : Sink {
   private val sink = RealBufferedSink(sink)
 
   /** The deflater used to compress the body. */
-  @Suppress("NON_FINAL_MEMBER_IN_FINAL_CLASS") // Required to keep JApicmp happy.
   @get:JvmName("deflater")
-  open val deflater = Deflater(DEFAULT_COMPRESSION, true /* No wrap */)
+  val deflater = Deflater(DEFAULT_COMPRESSION, true /* No wrap */)
 
   /**
    * The deflater sink takes care of moving data between decompressed source and
@@ -130,7 +129,7 @@ class GzipSink(sink: Sink) : Sink {
     var head = buffer.head!!
     var remaining = byteCount
     while (remaining > 0) {
-      val segmentLength = minOf(remaining, (head.limit - head.pos).toLong()).toInt()
+      val segmentLength = minOf(remaining, head.limit - head.pos).toInt()
       crc.update(head.data, head.pos, segmentLength)
       remaining -= segmentLength
       head = head.next!!

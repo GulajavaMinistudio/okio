@@ -74,7 +74,7 @@ class HashingSink : ForwardingSink {
     var hashedCount = 0L
     var s = source.head!!
     while (hashedCount < byteCount) {
-      val toHash = minOf(byteCount - hashedCount, (s.limit - s.pos).toLong()).toInt()
+      val toHash = minOf(byteCount - hashedCount, s.limit - s.pos).toInt()
       if (messageDigest != null) {
         messageDigest.update(s.data, s.pos, toHash)
       } else {
@@ -94,9 +94,8 @@ class HashingSink : ForwardingSink {
    * **Warning:** This method is not idempotent. Each time this method is called its
    * internal state is cleared. This starts a new hash with zero bytes accepted.
    */
-  @Suppress("NON_FINAL_MEMBER_IN_FINAL_CLASS") // Required to keep JApicmp happy.
   @get:JvmName("hash")
-  open val hash: ByteString get() {
+  val hash: ByteString get() {
     val result = if (messageDigest != null) messageDigest.digest() else mac!!.doFinal()
     return ByteString.of(*result)
   }
