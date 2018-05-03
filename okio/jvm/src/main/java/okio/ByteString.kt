@@ -15,8 +15,6 @@
  */
 package okio
 
-import okio.Util.arrayRangeEquals
-import okio.Util.checkOffsetAndCount
 import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
@@ -223,6 +221,11 @@ internal constructor(
   /** Returns the byte at `pos`.  */
   open fun getByte(pos: Int) = data[pos]
 
+  /** Returns the byte at `index`.  */
+  // TODO(jwilson): I’d prefer to combine this with the method above, but @JvmName("getByte")
+  // doesn't seem to work because it's an open function? (It’s overridden by SegmentedByteString.)
+  operator fun get(index: Int): Byte = getByte(index)
+
   /** Returns the number of bytes in this ByteString. */
   open fun size() = data.size
 
@@ -332,8 +335,8 @@ internal constructor(
     var i = 0
     val size = minOf(sizeA, sizeB)
     while (i < size) {
-      val byteA = getByte(i) and 0xff
-      val byteB = other.getByte(i) and 0xff
+      val byteA = this[i] and 0xff
+      val byteB = other[i] and 0xff
       if (byteA == byteB) {
         i++
         continue
