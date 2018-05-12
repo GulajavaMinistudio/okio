@@ -25,7 +25,6 @@ import java.nio.channels.ByteChannel
 import java.nio.charset.Charset
 import java.security.InvalidKeyException
 import java.security.MessageDigest
-import java.util.ArrayList
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -508,30 +507,118 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
   override fun readByteString(byteCount: Long) = ByteString(readByteArray(byteCount))
 
   override fun select(options: Options): Int {
-    val s = head ?: return options.indexOf(ByteString.EMPTY)
-    options.byteStrings.forEachIndexed { i, b ->
-      if (size >= b.size() && rangeEquals(s, s.pos, b.internalArray(), 0, b.size())) {
-        skip(b.size().toLong())
-        return i
-      }
-    }
-    return -1
+    val index = selectPrefix(options)
+    if (index == -1) return -1
+
+    // If the prefix match actually matched a full byte string, consume it and return it.
+    val selectedSize = options.byteStrings[index].size
+    skip(selectedSize.toLong())
+    return index
   }
 
   /**
-   * Returns the index of a value in `options` that is either the prefix of this buffer, or
-   * that this buffer is a prefix of. Unlike [.select] this never consumes the value, even
-   * if it is found in full.
+   * Returns the index of a value in options that is a prefix of this buffer. Returns -1 if no value
+   * is found. This method does two simultaneous iterations: it iterates the trie and it iterates
+   * this buffer. It returns when it reaches a result in the trie, when it mismatches in the trie,
+   * and when the buffer is exhausted.
+   *
+   * @param selectTruncated true to return -2 if a possible result is present but truncated. For
+   *     example, this will return -2 if the buffer contains [ab] and the options are [abc, abd].
+   *     Note that this is made complicated by the fact that options are listed in preference order,
+   *     and one option may be a prefix of another. For example, this returns -2 if the buffer
+   *     contains [ab] and the options are [abc, a].
    */
-  internal fun selectPrefix(options: Options): Int {
-    val s = head
-    options.byteStrings.forEachIndexed { i, b ->
-      val bytesLimit = minOf(size, b.size()).toInt()
-      if (bytesLimit == 0 || rangeEquals(s!!, s.pos, b.internalArray(), 0, bytesLimit)) {
-        return i
-      }
+  internal fun selectPrefix(options: Options, selectTruncated: Boolean = false): Int {
+    val head = head
+    if (head == null) {
+      if (selectTruncated) return -2 // A result is present but truncated.
+      return options.indexOf(ByteString.EMPTY)
     }
-    return -1
+
+    var s: Segment? = head
+    var data = head.data
+    var pos = head.pos
+    var limit = head.limit
+
+    val trie = options.trie
+    var triePos = 0
+
+    var prefixIndex = -1
+
+    navigateTrie@
+    while (true) {
+      val scanOrSelect = trie[triePos++]
+
+      val possiblePrefixIndex = trie[triePos++]
+      if (possiblePrefixIndex != -1) {
+        prefixIndex = possiblePrefixIndex
+      }
+
+      val nextStep: Int
+
+      if (s == null) {
+        break@navigateTrie
+      } else if (scanOrSelect < 0) {
+        // Scan: take multiple bytes from the buffer and the trie, looking for any mismatch.
+        val scanByteCount = -1 * scanOrSelect
+        val trieLimit = triePos + scanByteCount
+        while (true) {
+          val byte = data[pos++] and 0xff
+          if (byte != trie[triePos++]) return prefixIndex // Fail 'cause we found a mismatch.
+          val scanComplete = (triePos == trieLimit)
+
+          // Advance to the next buffer segment if this one is exhausted.
+          if (pos == limit) {
+            s = s!!.next!!
+            pos = s.pos
+            data = s.data
+            limit = s.limit
+            if (s == head) {
+              if (!scanComplete) break@navigateTrie // We were exhausted before the scan completed.
+              s = null // We were exhausted at the end of the scan.
+            }
+          }
+
+          if (scanComplete) {
+            nextStep = trie[triePos]
+            break
+          }
+        }
+      } else {
+        // Select: take one byte from the buffer and find a match in the trie.
+        val selectChoiceCount = scanOrSelect
+        val byte = data[pos++] and 0xff
+        val selectLimit = triePos + selectChoiceCount
+        while (true) {
+          if (triePos == selectLimit) return prefixIndex // Fail 'cause we didn't find a match.
+
+          if (byte == trie[triePos]) {
+            nextStep = trie[triePos + selectChoiceCount]
+            break
+          }
+
+          triePos++
+        }
+
+        // Advance to the next buffer segment if this one is exhausted.
+        if (pos == limit) {
+          s = s.next!!
+          pos = s.pos
+          data = s.data
+          limit = s.limit
+          if (s == head) {
+            s = null // No more segments! The next trie node will be our last.
+          }
+        }
+      }
+
+      if (nextStep >= 0) return nextStep // Found a matching option.
+      triePos = -nextStep // Found another node to continue the search.
+    }
+
+    // We break out of the loop above when we've exhausted the buffer without exhausting the trie.
+    if (selectTruncated) return -2 // The buffer is a prefix of at least one option.
+    return prefixIndex // Return any matches we encountered while searching for a deeper match.
   }
 
   @Throws(EOFException::class)
@@ -1333,7 +1420,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
   @Throws(IOException::class)
   override fun indexOf(bytes: ByteString, fromIndex: Long): Long {
     var fromIndex = fromIndex
-    require(bytes.size() > 0) { "bytes is empty" }
+    require(bytes.size > 0) { "bytes is empty" }
     require(fromIndex >= 0L) { "fromIndex < 0: $fromIndex" }
 
     seek(fromIndex) { s, offset ->
@@ -1343,7 +1430,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
       // Scan through the segments, searching for the lead byte. Each time that is found, delegate
       // to rangeEquals() to check for a complete match.
       val b0 = bytes[0]
-      val bytesSize = bytes.size()
+      val bytesSize = bytes.size
       val resultLimit = size - bytesSize + 1L
       while (offset < resultLimit) {
         // Scan through the current segment.
@@ -1378,7 +1465,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
       // Special case searching for one of two bytes. This is a common case for tools like Moshi,
       // which search for pairs of chars like `\r` and `\n` or {@code `"` and `\`. The impact of this
       // optimization is a ~5x speedup for this case without a substantial cost to other cases.
-      if (targetBytes.size() == 2) {
+      if (targetBytes.size == 2) {
         // Scan through the segments, searching for either of the two bytes.
         val b0 = targetBytes[0]
         val b1 = targetBytes[1]
@@ -1426,7 +1513,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
   }
 
   override fun rangeEquals(offset: Long, bytes: ByteString) =
-      rangeEquals(offset, bytes, 0, bytes.size())
+      rangeEquals(offset, bytes, 0, bytes.size)
 
   override fun rangeEquals(
     offset: Long, bytes: ByteString, bytesOffset: Int, byteCount: Int
@@ -1435,7 +1522,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
         || bytesOffset < 0
         || byteCount < 0
         || size - offset < byteCount
-        || bytes.size() - bytesOffset < byteCount) {
+        || bytes.size - bytesOffset < byteCount) {
       return false
     }
     for (i in 0 until byteCount) {
@@ -1485,19 +1572,6 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
   override fun close() {}
 
   override fun timeout() = Timeout.NONE
-
-  /** For testing. This returns the sizes of the segments in this buffer.  */
-  internal fun segmentSizes(): List<Int> {
-    if (head == null) return emptyList()
-    val result = ArrayList<Int>()
-    result.add(head!!.limit - head!!.pos)
-    var s = head!!.next
-    while (s != head) {
-      result.add(s!!.limit - s.pos)
-      s = s.next
-    }
-    return result
-  }
 
   /** Returns the 128-bit MD5 hash of this buffer.  */
   fun md5() = digest("MD5")
