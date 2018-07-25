@@ -30,7 +30,7 @@ object TestUtil {
   // Necessary to make an internal member visible to Java.
   const val SEGMENT_POOL_MAX_SIZE = SegmentPool.MAX_SIZE
   const val SEGMENT_SIZE = Segment.SIZE
-  const val REPLACEMENT_CHARACTER: Int = Buffer.REPLACEMENT_CHARACTER
+  const val REPLACEMENT_CHARACTER: Int = okio.REPLACEMENT_CHARACTER
   @JvmStatic fun segmentPoolByteCount() = SegmentPool.byteCount
 
   @JvmStatic
@@ -268,7 +268,7 @@ object TestUtil {
     result.head!!.prev = result.head
     result.head!!.next = result.head!!.prev
     var s = original.head!!.next
-    while (s != original.head) {
+    while (s !== original.head) {
       result.head!!.prev!!.push(s!!.unsharedCopy())
       s = s.next
     }
