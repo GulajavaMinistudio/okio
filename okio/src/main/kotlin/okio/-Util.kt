@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-@file:JvmName("Util")
+@file:JvmName("-Util")
 
 package okio
 
@@ -23,6 +23,8 @@ internal fun checkOffsetAndCount(size: Long, offset: Long, byteCount: Long) {
     throw ArrayIndexOutOfBoundsException("size=$size offset=$offset byteCount=$byteCount")
   }
 }
+
+/* ktlint-disable no-multi-spaces indent */
 
 internal fun Short.reverseBytes(): Short {
   val i = toInt() and 0xffff
@@ -49,8 +51,13 @@ internal fun Long.reverseBytes(): Long {
          (this and 0x00000000000000ffL  shl 56)
 }
 
+/* ktlint-enable no-multi-spaces indent */
+
 @Suppress("NOTHING_TO_INLINE") // Syntactic sugar.
 internal inline infix fun Byte.shr(other: Int): Int = toInt() shr other
+
+@Suppress("NOTHING_TO_INLINE") // Syntactic sugar.
+internal inline infix fun Byte.shl(other: Int): Int = toInt() shl other
 
 @Suppress("NOTHING_TO_INLINE") // Syntactic sugar.
 internal inline infix fun Byte.and(other: Int): Int = toInt() and other

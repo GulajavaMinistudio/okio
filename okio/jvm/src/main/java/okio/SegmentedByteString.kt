@@ -118,7 +118,7 @@ internal class SegmentedByteString(buffer: Buffer, byteCount: Int) : ByteString(
   override fun substring(beginIndex: Int, endIndex: Int) = toByteString().substring(beginIndex,
       endIndex)
 
-  override fun getByte(pos: Int): Byte {
+  override fun internalGet(pos: Int): Byte {
     checkOffsetAndCount(directory[segments.size - 1].toLong(), pos.toLong(), 1)
     val segment = segment(pos)
     val segmentOffset = if (segment == 0) 0 else directory[segment - 1]
@@ -190,7 +190,10 @@ internal class SegmentedByteString(buffer: Buffer, byteCount: Int) : ByteString(
   }
 
   override fun rangeEquals(
-    offset: Int, other: ByteString, otherOffset: Int, byteCount: Int
+    offset: Int,
+    other: ByteString,
+    otherOffset: Int,
+    byteCount: Int
   ): Boolean {
     var offset = offset
     var otherOffset = otherOffset
@@ -222,8 +225,8 @@ internal class SegmentedByteString(buffer: Buffer, byteCount: Int) : ByteString(
     var offset = offset
     var otherOffset = otherOffset
     var byteCount = byteCount
-    if (offset < 0 || offset > size - byteCount
-        || otherOffset < 0 || otherOffset > other.size - byteCount) {
+    if (offset < 0 || offset > size - byteCount ||
+        otherOffset < 0 || otherOffset > other.size - byteCount) {
       return false
     }
     // Go segment-by-segment through this, comparing ranges of arrays.

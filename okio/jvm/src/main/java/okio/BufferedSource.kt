@@ -27,7 +27,14 @@ import java.nio.charset.Charset
  */
 interface BufferedSource : Source, ReadableByteChannel {
   /** Returns this source's internal buffer. */
+  @Deprecated(
+    message = "moved to val: use getBuffer() instead",
+    replaceWith = ReplaceWith(expression = "buffer"),
+    level = DeprecationLevel.WARNING)
   fun buffer(): Buffer
+
+  /** This source's internal buffer. */
+  val buffer: Buffer
 
   /**
    * Returns true if there are no more bytes in this source. This will block until there are bytes
@@ -564,6 +571,27 @@ interface BufferedSource : Source, ReadableByteChannel {
    */
   @Throws(IOException::class)
   fun rangeEquals(offset: Long, bytes: ByteString, bytesOffset: Int, byteCount: Int): Boolean
+
+  /**
+   * Returns a new `BufferedSource` that can read data from this `BufferedSource` without consuming
+   * it. The returned source becomes invalid once this source is next read or closed.
+   *
+   * For example, we can use `peek()` to lookahead and read the same data multiple times.
+   *
+   * ```
+   * val buffer = Buffer()
+   * buffer.writeUtf8("abcdefghi")
+   *
+   * buffer.readUtf8(3) // returns "abc", buffer contains "defghi"
+   *
+   * val peek = buffer.peek()
+   * peek.readUtf8(3) // returns "def", buffer contains "defghi"
+   * peek.readUtf8(3) // returns "ghi", buffer contains "defghi"
+   *
+   * buffer.readUtf8(3) // returns "def", buffer contains "ghi"
+   * ```
+   */
+  fun peek(): BufferedSource
 
   /** Returns an input stream that reads from this source. */
   fun inputStream(): InputStream

@@ -16,46 +16,44 @@
 
 package okio
 
+import okio.internal.commonAsUtf8ToByteArray
 import kotlin.annotation.AnnotationTarget.FIELD
 import kotlin.annotation.AnnotationTarget.FILE
 import kotlin.annotation.AnnotationTarget.FUNCTION
 import kotlin.annotation.AnnotationTarget.PROPERTY_GETTER
 import kotlin.annotation.AnnotationTarget.PROPERTY_SETTER
 
-// TODO remove after https://youtrack.jetbrains.com/issue/KT-24478
 @Target(FUNCTION)
-expect annotation class JvmOverloads()
+actual annotation class JvmOverloads
 
-// TODO remove after https://youtrack.jetbrains.com/issue/KT-24478
 @Target(FIELD)
-expect annotation class JvmField()
+actual annotation class JvmField
 
-// TODO remove after https://youtrack.jetbrains.com/issue/KT-24478
 @Target(FUNCTION)
-expect annotation class JvmStatic()
+actual annotation class JvmStatic
 
-// TODO remove after https://youtrack.jetbrains.com/issue/KT-24478
 @Target(FILE, FUNCTION, PROPERTY_GETTER, PROPERTY_SETTER)
-expect annotation class JvmName(val name: String)
+actual annotation class JvmName(actual val name: String)
 
-internal expect fun arraycopy(
+internal actual fun arraycopy(
   src: ByteArray,
   srcPos: Int,
   dest: ByteArray,
   destPos: Int,
   length: Int
-)
+) {
+  for (i in 0 until length) {
+    dest[destPos + i] = src[srcPos + i]
+  }
+}
 
-internal expect fun hashCode(a: ByteArray): Int
+internal actual fun ByteArray.toUtf8String(): String = stringFromUtf8()
 
-internal expect fun ByteArray.toUtf8String(): String
+// We are NOT using the Kotlin/Native function `toUtf8()` because it encodes
+// invalide UTF-16 characters as '\ufffd' instead of '?' like Okio does. In an
+// effort to keep the library consistent with itself, we use the Okio encoder
+// implementation instead. This will hopefully help avoid weird gotcha's as this
+// library starts to be used more across platforms.
+internal actual fun String.asUtf8ToByteArray(): ByteArray = commonAsUtf8ToByteArray()
 
-internal expect fun CharArray.createString(): String
-
-internal expect fun String.asUtf8ToByteArray(): ByteArray
-
-// TODO make internal https://youtrack.jetbrains.com/issue/KT-19664
-expect open class IndexOutOfBoundsException(message: String) : RuntimeException
-
-// TODO make internal https://youtrack.jetbrains.com/issue/KT-19664
-expect class ArrayIndexOutOfBoundsException(message: String) : IndexOutOfBoundsException
+actual typealias ArrayIndexOutOfBoundsException = kotlin.ArrayIndexOutOfBoundsException

@@ -50,6 +50,8 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
 
   override fun buffer() = this
 
+  override val buffer get() = this
+
   override fun outputStream(): OutputStream {
     return object : OutputStream() {
       override fun write(b: Int) {
@@ -80,6 +82,10 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
   }
 
   override fun request(byteCount: Long) = size >= byteCount
+
+  override fun peek(): BufferedSource {
+    return PeekSource(this).buffer()
+  }
 
   override fun inputStream(): InputStream {
     return object : InputStream() {
@@ -323,7 +329,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     if (limit - pos < 4L) {
       return (readByte() and 0xff shl 24
           or (readByte() and 0xff shl 16)
-          or (readByte() and 0xff shl  8)
+          or (readByte() and 0xff shl  8) // ktlint-disable no-multi-spaces
           or (readByte() and 0xff))
     }
 
@@ -365,7 +371,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
         or (data[pos++] and 0xffL shl 32)
         or (data[pos++] and 0xffL shl 24)
         or (data[pos++] and 0xffL shl 16)
-        or (data[pos++] and 0xffL shl  8)
+        or (data[pos++] and 0xffL shl  8) // ktlint-disable no-multi-spaces
         or (data[pos++] and 0xffL))
     size -= 8L
 
@@ -695,9 +701,9 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     val scanLength = if (limit == Long.MAX_VALUE) Long.MAX_VALUE else limit + 1L
     val newline = indexOf('\n'.toByte(), 0L, scanLength)
     if (newline != -1L) return readUtf8Line(newline)
-    if (scanLength < size
-        && this[scanLength - 1] == '\r'.toByte()
-        && this[scanLength] == '\n'.toByte()) {
+    if (scanLength < size &&
+        this[scanLength - 1] == '\r'.toByte() &&
+        this[scanLength] == '\n'.toByte()) {
       return readUtf8Line(scanLength) // The line was 'limit' UTF-8 bytes followed by \r\n.
     }
     val data = Buffer()
@@ -761,13 +767,13 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
       else -> {
         // We expected the first byte of a code point but got something else.
         skip(1)
-        return REPLACEMENT_CHARACTER
+        return REPLACEMENT_CODE_POINT
       }
     }
 
     if (size < byteCount) {
-      throw EOFException("size < " + byteCount + ": " + size
-          + " (to read code point prefixed 0x" + Integer.toHexString(b0.toInt()) + ")")
+      throw EOFException("size < " + byteCount + ": " + size +
+        " (to read code point prefixed 0x" + Integer.toHexString(b0.toInt()) + ")")
     }
 
     // Read the continuation bytes. If we encounter a non-continuation byte, the sequence consumed
@@ -781,7 +787,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
         codePoint = codePoint or (b and 0x3f)
       } else {
         skip(i.toLong())
-        return REPLACEMENT_CHARACTER
+        return REPLACEMENT_CODE_POINT
       }
     }
 
@@ -789,13 +795,13 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
 
     return when {
       codePoint > 0x10ffff -> {
-        REPLACEMENT_CHARACTER // Reject code points larger than the Unicode maximum.
+        REPLACEMENT_CODE_POINT // Reject code points larger than the Unicode maximum.
       }
       codePoint in 0xd800..0xdfff -> {
-        REPLACEMENT_CHARACTER // Reject partial surrogates.
+        REPLACEMENT_CODE_POINT // Reject partial surrogates.
       }
       codePoint < min -> {
-        REPLACEMENT_CHARACTER // Reject overlong code points.
+        REPLACEMENT_CODE_POINT // Reject overlong code points.
       }
       else -> codePoint
     }
@@ -928,16 +934,26 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
 
         c < 0x800 -> {
           // Emit a 11-bit character with 2 bytes.
-          writeByte(c shr 6          or 0xc0) // 110xxxxx
-          writeByte(c       and 0x3f or 0x80) // 10xxxxxx
+          val tail = writableSegment(2)
+          /* ktlint-disable no-multi-spaces */
+          tail.data[tail.limit    ] = (c shr 6          or 0xc0).toByte() // 110xxxxx
+          tail.data[tail.limit + 1] = (c       and 0x3f or 0x80).toByte() // 10xxxxxx
+          /* ktlint-enable no-multi-spaces */
+          tail.limit += 2
+          size += 2L
           i++
         }
 
         c < 0xd800 || c > 0xdfff -> {
           // Emit a 16-bit character with 3 bytes.
-          writeByte(c shr 12          or 0xe0) // 1110xxxx
-          writeByte(c shr  6 and 0x3f or 0x80) // 10xxxxxx
-          writeByte(c        and 0x3f or 0x80) // 10xxxxxx
+          val tail = writableSegment(3)
+          /* ktlint-disable no-multi-spaces */
+          tail.data[tail.limit    ] = (c shr 12          or 0xe0).toByte() // 1110xxxx
+          tail.data[tail.limit + 1] = (c shr  6 and 0x3f or 0x80).toByte() // 10xxxxxx
+          tail.data[tail.limit + 2] = (c        and 0x3f or 0x80).toByte() // 10xxxxxx
+          /* ktlint-enable no-multi-spaces */
+          tail.limit += 3
+          size += 3L
           i++
         }
 
@@ -953,13 +969,18 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
             // UTF-16 high surrogate: 110110xxxxxxxxxx (10 bits)
             // UTF-16 low surrogate:  110111yyyyyyyyyy (10 bits)
             // Unicode code point:    00010000000000000000 + xxxxxxxxxxyyyyyyyyyy (21 bits)
-            val codePoint = 0x010000 + (c and 0xd800.inv() shl 10 or (low and 0xdc00.inv()))
+            val codePoint = 0x010000 + (c and 0x03ff shl 10 or (low and 0x03ff))
 
             // Emit a 21-bit character with 4 bytes.
-            writeByte(codePoint shr 18          or 0xf0) // 11110xxx
-            writeByte(codePoint shr 12 and 0x3f or 0x80) // 10xxxxxx
-            writeByte(codePoint shr  6 and 0x3f or 0x80) // 10xxyyyy
-            writeByte(codePoint        and 0x3f or 0x80) // 10yyyyyy
+            val tail = writableSegment(4)
+            /* ktlint-disable no-multi-spaces */
+            tail.data[tail.limit    ] = (codePoint shr 18          or 0xf0).toByte() // 11110xxx
+            tail.data[tail.limit + 1] = (codePoint shr 12 and 0x3f or 0x80).toByte() // 10xxxxxx
+            tail.data[tail.limit + 2] = (codePoint shr  6 and 0x3f or 0x80).toByte() // 10xxyyyy
+            tail.data[tail.limit + 3] = (codePoint        and 0x3f or 0x80).toByte() // 10yyyyyy
+            /* ktlint-enable no-multi-spaces */
+            tail.limit += 4
+            size += 4L
             i += 2
           }
         }
@@ -977,8 +998,13 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
       }
       codePoint < 0x800 -> {
         // Emit a 11-bit code point with 2 bytes.
-        writeByte(codePoint shr 6          or 0xc0) // 110xxxxx
-        writeByte(codePoint       and 0x3f or 0x80) // 10xxxxxx
+        val tail = writableSegment(2)
+        /* ktlint-disable no-multi-spaces */
+        tail.data[tail.limit    ] = (codePoint shr 6          or 0xc0).toByte() // 110xxxxx
+        tail.data[tail.limit + 1] = (codePoint       and 0x3f or 0x80).toByte() // 10xxxxxx
+        /* ktlint-enable no-multi-spaces */
+        tail.limit += 2
+        size += 2L
       }
       codePoint in 0xd800..0xdfff -> {
         // Emit a replacement character for a partial surrogate.
@@ -986,16 +1012,26 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
       }
       codePoint < 0x10000 -> {
         // Emit a 16-bit code point with 3 bytes.
-        writeByte(codePoint shr 12          or 0xe0) // 1110xxxx
-        writeByte(codePoint shr  6 and 0x3f or 0x80) // 10xxxxxx
-        writeByte(codePoint        and 0x3f or 0x80) // 10xxxxxx
+        val tail = writableSegment(3)
+        /* ktlint-disable no-multi-spaces */
+        tail.data[tail.limit    ] = (codePoint shr 12          or 0xe0).toByte() // 1110xxxx
+        tail.data[tail.limit + 1] = (codePoint shr  6 and 0x3f or 0x80).toByte() // 10xxxxxx
+        tail.data[tail.limit + 2] = (codePoint        and 0x3f or 0x80).toByte() // 10xxxxxx
+        /* ktlint-enable no-multi-spaces */
+        tail.limit += 3
+        size += 3L
       }
       codePoint <= 0x10ffff -> {
         // Emit a 21-bit code point with 4 bytes.
-        writeByte(codePoint shr 18          or 0xf0) // 11110xxx
-        writeByte(codePoint shr 12 and 0x3f or 0x80) // 10xxxxxx
-        writeByte(codePoint shr  6 and 0x3f or 0x80) // 10xxxxxx
-        writeByte(codePoint        and 0x3f or 0x80) // 10xxxxxx
+        val tail = writableSegment(4)
+        /* ktlint-disable no-multi-spaces */
+        tail.data[tail.limit    ] = (codePoint shr 18          or 0xf0).toByte() // 11110xxx
+        tail.data[tail.limit + 1] = (codePoint shr 12 and 0x3f or 0x80).toByte() // 10xxxxxx
+        tail.data[tail.limit + 2] = (codePoint shr  6 and 0x3f or 0x80).toByte() // 10xxyyyy
+        tail.data[tail.limit + 3] = (codePoint        and 0x3f or 0x80).toByte() // 10yyyyyy
+        /* ktlint-enable no-multi-spaces */
+        tail.limit += 4
+        size += 4L
       }
       else -> {
         throw IllegalArgumentException("Unexpected code point: ${Integer.toHexString(codePoint)}")
@@ -1095,7 +1131,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     val data = tail.data
     var limit = tail.limit
     data[limit++] = (s ushr 8 and 0xff).toByte()
-    data[limit++] = (s        and 0xff).toByte()
+    data[limit++] = (s        and 0xff).toByte() // ktlint-disable no-multi-spaces
     tail.limit = limit
     size += 2L
     return this
@@ -1109,8 +1145,8 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     var limit = tail.limit
     data[limit++] = (i ushr 24 and 0xff).toByte()
     data[limit++] = (i ushr 16 and 0xff).toByte()
-    data[limit++] = (i ushr  8 and 0xff).toByte()
-    data[limit++] = (i         and 0xff).toByte()
+    data[limit++] = (i ushr  8 and 0xff).toByte() // ktlint-disable no-multi-spaces
+    data[limit++] = (i         and 0xff).toByte() // ktlint-disable no-multi-spaces
     tail.limit = limit
     size += 4L
     return this
@@ -1128,8 +1164,8 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     data[limit++] = (v ushr 32 and 0xffL).toByte()
     data[limit++] = (v ushr 24 and 0xffL).toByte()
     data[limit++] = (v ushr 16 and 0xffL).toByte()
-    data[limit++] = (v ushr  8 and 0xffL).toByte()
-    data[limit++] = (v         and 0xffL).toByte()
+    data[limit++] = (v ushr  8 and 0xffL).toByte() // ktlint-disable no-multi-spaces
+    data[limit++] = (v         and 0xffL).toByte() // ktlint-disable no-multi-spaces
     tail.limit = limit
     size += 8L
     return this
@@ -1307,8 +1343,8 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
       // Is a prefix of the source's head segment all that we need to move?
       if (byteCount < source.head!!.limit - source.head!!.pos) {
         val tail = if (head != null) head!!.prev else null
-        if (tail != null && tail.owner
-            && byteCount + tail.limit - (if (tail.shared) 0 else tail.pos) <= Segment.SIZE) {
+        if (tail != null && tail.owner &&
+            byteCount + tail.limit - (if (tail.shared) 0 else tail.pos) <= Segment.SIZE) {
           // Our existing segments are sufficient. Move bytes from source's head to our tail.
           source.head!!.writeTo(tail, byteCount.toInt())
           source.size -= byteCount
@@ -1521,13 +1557,16 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
       rangeEquals(offset, bytes, 0, bytes.size)
 
   override fun rangeEquals(
-    offset: Long, bytes: ByteString, bytesOffset: Int, byteCount: Int
+    offset: Long,
+    bytes: ByteString,
+    bytesOffset: Int,
+    byteCount: Int
   ): Boolean {
-    if (offset < 0L
-        || bytesOffset < 0
-        || byteCount < 0
-        || size - offset < byteCount
-        || bytes.size - bytesOffset < byteCount) {
+    if (offset < 0L ||
+        bytesOffset < 0 ||
+        byteCount < 0 ||
+        size - offset < byteCount ||
+        bytes.size - bytesOffset < byteCount) {
       return false
     }
     for (i in 0 until byteCount) {
@@ -1543,7 +1582,11 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
    * `bytes[bytesOffset..bytesLimit)`.
    */
   private fun rangeEquals(
-    segment: Segment, segmentPos: Int, bytes: ByteArray, bytesOffset: Int, bytesLimit: Int
+    segment: Segment,
+    segmentPos: Int,
+    bytes: ByteArray,
+    bytesOffset: Int,
+    bytesLimit: Int
   ): Boolean {
     var segment = segment
     var segmentPos = segmentPos
@@ -1731,6 +1774,20 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     return unsafeCursor
   }
 
+  @JvmName("-deprecated_getByte")
+  @Deprecated(
+      message = "moved to operator function",
+      replaceWith = ReplaceWith(expression = "this[index]"),
+      level = DeprecationLevel.ERROR)
+  fun getByte(index: Long) = this[index]
+
+  @JvmName("-deprecated_size")
+  @Deprecated(
+      message = "moved to val",
+      replaceWith = ReplaceWith(expression = "size"),
+      level = DeprecationLevel.ERROR)
+  fun size() = size
+
   /**
    * A handle to the underlying data in a buffer. This handle is unsafe because it does not enforce
    * its own invariants. Instead, it assumes a careful user who has studied Okio's implementation
@@ -1754,14 +1811,14 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
    *
    * These optimizations all leverage the way Okio stores data internally. Okio Buffers are
    * implemented using a doubly-linked list of segments. Each segment is a contiguous range within a
-   * 8 KiB `byte[]`. Each segment has two indexes, `start`, the offset of the first byte of the
+   * 8 KiB `ByteArray`. Each segment has two indexes, `start`, the offset of the first byte of the
    * array containing application data, and `end`, the offset of the first byte beyond `start` whose
    * data is undefined.
    *
    * New buffers are empty and have no segments:
    *
    * ```
-   *   Buffer buffer = new Buffer();
+   *   val buffer = Buffer()
    * ```
    *
    * We append 7 bytes of data to the end of our empty buffer. Internally, the buffer allocates a
@@ -1769,7 +1826,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
    * bytes of data:
    *
    * ```
-   * buffer.writeUtf8("sealion");
+   * buffer.writeUtf8("sealion")
    *
    * // [ 's', 'e', 'a', 'l', 'i', 'o', 'n', '?', '?', '?', ...]
    * //    ^                                  ^
@@ -1781,7 +1838,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
    * internal indices.
    *
    * ```
-   * buffer.readUtf8(4); // "seal"
+   * buffer.readUtf8(4) // "seal"
    *
    * // [ 's', 'e', 'a', 'l', 'i', 'o', 'n', '?', '?', '?', ...]
    * //                        ^              ^
@@ -1794,8 +1851,8 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
    * and ends.
    *
    * ```
-   * Buffer xoxo = new Buffer();
-   * xoxo.writeUtf8(Strings.repeat("xo", 5_000));
+   * val xoxo = new Buffer()
+   * xoxo.writeUtf8("xo".repeat(5_000))
    *
    * // [ 'x', 'o', 'x', 'o', 'x', 'o', 'x', 'o', ..., 'x', 'o', 'x', 'o']
    * //    ^                                                               ^
@@ -1818,8 +1875,8 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
    * unrelated buffer:
    *
    * ```
-   * Buffer abc = new Buffer();
-   * abc.writeUtf8("abc");
+   * val abc = new Buffer()
+   * abc.writeUtf8("abc")
    *
    * // [ 'a', 'b', 'c', 'o', 'x', 'o', 'x', 'o', ...]
    * //    ^              ^
@@ -1831,16 +1888,16 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
    * allocate a new (private) segment early.
    *
    * ```
-   * Buffer nana = new Buffer();
-   * nana.writeUtf8(Strings.repeat("na", 2_500));
-   * nana.readUtf8(2); // "na"
+   * val nana = new Buffer()
+   * nana.writeUtf8("na".repeat(2_500))
+   * nana.readUtf8(2) // "na"
    *
    * // [ 'n', 'a', 'n', 'a', ..., 'n', 'a', 'n', 'a', '?', '?', '?', ...]
    * //              ^                                  ^
    * //           start = 0                         end = 5000
    *
-   * nana2 = nana.clone();
-   * nana2.writeUtf8("batman");
+   * nana2 = nana.clone()
+   * nana2.writeUtf8("batman")
    *
    * // [ 'n', 'a', 'n', 'a', ..., 'n', 'a', 'n', 'a', '?', '?', '?', ...]
    * //              ^                                  ^
@@ -1872,17 +1929,17 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
    *
    * Use [Buffer.readUnsafe] to create a cursor to read buffer data and [Buffer.readAndWriteUnsafe]
    * to create a cursor to read and write buffer data. In either case, always call
-   * [UnsafeCursor.close] when done with a cursor. This is convenient with Java 7's
-   * try-with-resources syntax. In this example we read all of the bytes in a buffer into a byte
+   * [UnsafeCursor.close] when done with a cursor. This is convenient with Kotlin's
+   * [use] extension function. In this example we read all of the bytes in a buffer into a byte
    * array:
    *
    * ```
-   * byte[] bufferBytes = new byte[(int) buffer.size()];
+   * val bufferBytes = ByteArray(buffer.size.toInt())
    *
-   * try (UnsafeCursor cursor = buffer.readUnsafe()) {
+   * buffer.readUnsafe().use { cursor ->
    *   while (cursor.next() != -1) {
    *     System.arraycopy(cursor.data, cursor.start,
-   *         bufferBytes, (int) cursor.offset, cursor.end - cursor.start);
+   *         bufferBytes, cursor.offset.toInt(), cursor.end - cursor.start);
    *   }
    * }
    * ```
@@ -1940,7 +1997,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
      * the readable range (at least 1), or -1 if we have reached the end of the buffer and there are
      * no more bytes to read.
      */
-    operator fun next(): Int {
+    fun next(): Int {
       check(offset != buffer!!.size) { "no more bytes" }
       return if (offset == -1L) seek(0L) else seek(offset + (end - start))
     }
