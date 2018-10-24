@@ -35,17 +35,18 @@ import java.io.InterruptedIOException
  *  * `maxByteCount`: Maximum number of bytes to allocate on any call. This is also the number of
  *    bytes that will be returned before any waiting.
  */
-class Throttler {
-  private var bytesPerSecond: Long = 0L
-  private var waitByteCount: Long = 8 * 1024 // 8 KiB.
-  private var maxByteCount: Long = 256 * 1024 // 256 KiB.
-  private var nanosForMaxByteCount: Long = -1L
-
+class Throttler internal constructor(
   /**
    * The nanoTime that we've consumed all bytes through. This is never greater than the current
    * nanoTime plus nanosForMaxByteCount.
    */
-  private var allocatedUntil: Long = System.nanoTime()
+  private var allocatedUntil: Long
+) {
+  private var bytesPerSecond: Long = 0L
+  private var waitByteCount: Long = 8 * 1024 // 8 KiB.
+  private var maxByteCount: Long = 256 * 1024 // 256 KiB.
+
+  constructor() : this(allocatedUntil = System.nanoTime())
 
   /** Sets the rate at which bytes will be allocated. Use 0 for no limit. */
   @JvmOverloads
@@ -62,11 +63,6 @@ class Throttler {
       this.bytesPerSecond = bytesPerSecond
       this.waitByteCount = waitByteCount
       this.maxByteCount = maxByteCount
-      this.nanosForMaxByteCount = when {
-        bytesPerSecond != 0L -> maxByteCount * 1_000_000_000L / bytesPerSecond
-        else -> -1L
-      }
-
       (this as Object).notifyAll()
     }
   }
@@ -80,33 +76,54 @@ class Throttler {
 
     synchronized(this) {
       while (true) {
-        if (bytesPerSecond == 0L) return byteCount // No limits.
-
         val now = System.nanoTime()
-        val idleInNanos = maxOf(allocatedUntil - now, 0L)
-        val usableNanos = nanosForMaxByteCount - idleInNanos
-        val immediateBytes = bytesPerSecond * usableNanos / 1_000_000_000L
-
-        // Fulfill the entire request without waiting.
-        if (immediateBytes >= byteCount) {
-          val byteCountNanos = byteCount * 1_000_000_000L / bytesPerSecond
-          allocatedUntil = now + idleInNanos + byteCountNanos
-          return byteCount
-        }
-
-        // Fulfill a big-enough block without waiting.
-        if (immediateBytes >= waitByteCount) {
-          allocatedUntil = now + idleInNanos + usableNanos
-          return immediateBytes
-        }
-
-        // Wait until we can write some bytes.
-        val byteCountNanos = minOf(waitByteCount, byteCount) * 1_000_000_000L / bytesPerSecond
-        waitNanos(byteCountNanos - usableNanos)
+        val byteCountOrWaitNanos = byteCountOrWaitNanos(now, byteCount)
+        if (byteCountOrWaitNanos >= 0) return byteCountOrWaitNanos
+        waitNanos(-byteCountOrWaitNanos)
       }
     }
     throw AssertionError() // Unreachable, but synchronized() doesn't know that.
   }
+
+  /**
+   * Returns the byte count to take immediately or -1 times the number of nanos to wait until the
+   * next attempt. If the returned value is negative it should be interpreted as a duration in
+   * nanos; if it is positive it should be interpreted as a byte count.
+   */
+  internal fun byteCountOrWaitNanos(now: Long, byteCount: Long): Long {
+    if (bytesPerSecond == 0L) return byteCount // No limits.
+
+    val idleInNanos = maxOf(allocatedUntil - now, 0L)
+    val immediateBytes = maxByteCount - idleInNanos.nanosToBytes()
+
+    // Fulfill the entire request without waiting.
+    if (immediateBytes >= byteCount) {
+      allocatedUntil = now + idleInNanos + byteCount.bytesToNanos()
+      return byteCount
+    }
+
+    // Fulfill a big-enough block without waiting.
+    if (immediateBytes >= waitByteCount) {
+      allocatedUntil = now + maxByteCount.bytesToNanos()
+      return immediateBytes
+    }
+
+    // Looks like we'll need to wait until we can take the minimum required bytes.
+    val minByteCount = minOf(waitByteCount, byteCount)
+    val minWaitNanos = idleInNanos + (minByteCount - maxByteCount).bytesToNanos()
+
+    // But if the wait duration truncates to zero nanos after division, don't wait.
+    if (minWaitNanos == 0L) {
+      allocatedUntil = now + maxByteCount.bytesToNanos()
+      return minByteCount
+    }
+
+    return -minWaitNanos
+  }
+
+  private fun Long.nanosToBytes() = this * bytesPerSecond / 1_000_000_000L
+
+  private fun Long.bytesToNanos() = this * 1_000_000_000L / bytesPerSecond
 
   private fun waitNanos(nanosToWait: Long) {
     val millisToWait = nanosToWait / 1_000_000L
