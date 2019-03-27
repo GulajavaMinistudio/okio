@@ -16,6 +16,11 @@
 
 package okio
 
+import kotlin.jvm.JvmField
+import kotlin.jvm.JvmName
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
+
 /**
  * An immutable sequence of bytes.
  *
@@ -106,8 +111,10 @@ internal constructor(data: ByteArray) : Comparable<ByteString> {
 
   fun endsWith(suffix: ByteArray): Boolean
 
+  @JvmOverloads
   fun indexOf(other: ByteString, fromIndex: Int = 0): Int
 
+  @JvmOverloads
   fun indexOf(other: ByteArray, fromIndex: Int = 0): Int
 
   override fun equals(other: Any?): Boolean
