@@ -46,22 +46,22 @@ import java.io.IOException
  * Use [sink] to adapt an `OutputStream` to a sink. Use [outputStream()][BufferedSink.outputStream]
  * to adapt a sink to an `OutputStream`.
  */
-interface Sink : Closeable, Flushable {
+actual interface Sink : Closeable, Flushable {
   /** Removes `byteCount` bytes from `source` and appends them to this.  */
   @Throws(IOException::class)
-  fun write(source: Buffer, byteCount: Long)
+  actual fun write(source: Buffer, byteCount: Long)
 
   /** Pushes all buffered bytes to their final destination.  */
   @Throws(IOException::class)
-  override fun flush()
+  actual override fun flush()
 
   /** Returns the timeout for this sink.  */
-  fun timeout(): Timeout
+  actual fun timeout(): Timeout
 
   /**
    * Pushes all buffered bytes to their final destination and releases the resources held by this
    * sink. It is an error to write a closed sink. It is safe to close a sink more than once.
    */
   @Throws(IOException::class)
-  override fun close()
+  actual override fun close()
 }

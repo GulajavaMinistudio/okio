@@ -41,7 +41,7 @@ import javax.crypto.spec.SecretKeySpec
  * zero-fill the requested array before returning it to you. Even if you're going to write over that
  * space anyway. This class avoids zero-fill and GC churn by pooling byte arrays.
  */
-class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
+actual class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
   @JvmField internal var head: Segment? = null
 
   @get:JvmName("size")
@@ -50,7 +50,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
 
   override fun buffer() = this
 
-  override val buffer get() = this
+  actual override val buffer get() = this
 
   override fun outputStream(): OutputStream {
     return object : OutputStream() {
@@ -70,9 +70,9 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     }
   }
 
-  override fun emitCompleteSegments() = this // Nowhere to emit to!
+  actual override fun emitCompleteSegments() = this // Nowhere to emit to!
 
-  override fun emit() = this // Nowhere to emit to!
+  actual override fun emit() = this // Nowhere to emit to!
 
   override fun exhausted() = size == 0L
 
@@ -516,7 +516,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     return value
   }
 
-  override fun readByteString() = ByteString(readByteArray())
+  override fun readByteString(): ByteString = ByteString(readByteArray())
 
   @Throws(EOFException::class)
   override fun readByteString(byteCount: Long) = ByteString(readByteArray(byteCount))
@@ -892,14 +892,14 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     }
   }
 
-  override fun write(byteString: ByteString): Buffer {
+  actual override fun write(byteString: ByteString): Buffer {
     byteString.write(this)
     return this
   }
 
-  override fun writeUtf8(string: String) = writeUtf8(string, 0, string.length)
+  actual override fun writeUtf8(string: String) = writeUtf8(string, 0, string.length)
 
-  override fun writeUtf8(string: String, beginIndex: Int, endIndex: Int): Buffer {
+  actual override fun writeUtf8(string: String, beginIndex: Int, endIndex: Int): Buffer {
     require(beginIndex >= 0) { "beginIndex < 0: $beginIndex" }
     require(endIndex >= beginIndex) { "endIndex < beginIndex: $endIndex < $beginIndex" }
     require(endIndex <= string.length) { "endIndex > string.length: $endIndex > ${string.length}" }
@@ -990,7 +990,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     return this
   }
 
-  override fun writeUtf8CodePoint(codePoint: Int): Buffer {
+  actual override fun writeUtf8CodePoint(codePoint: Int): Buffer {
     when {
       codePoint < 0x80 -> {
         // Emit a 7-bit code point with 1 byte.
@@ -1058,9 +1058,9 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     return write(data, 0, data.size)
   }
 
-  override fun write(source: ByteArray) = write(source, 0, source.size)
+  actual override fun write(source: ByteArray) = write(source, 0, source.size)
 
-  override fun write(source: ByteArray, offset: Int, byteCount: Int): Buffer {
+  actual override fun write(source: ByteArray, offset: Int, byteCount: Int): Buffer {
     var offset = offset
     checkOffsetAndCount(source.size.toLong(), offset.toLong(), byteCount.toLong())
 
@@ -1109,7 +1109,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
   }
 
   @Throws(IOException::class)
-  override fun write(source: Source, byteCount: Long): BufferedSink {
+  actual override fun write(source: Source, byteCount: Long): Buffer {
     var byteCount = byteCount
     while (byteCount > 0L) {
       val read = source.read(this, byteCount)
@@ -1119,14 +1119,14 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     return this
   }
 
-  override fun writeByte(b: Int): Buffer {
+  actual override fun writeByte(b: Int): Buffer {
     val tail = writableSegment(1)
     tail.data[tail.limit++] = b.toByte()
     size += 1L
     return this
   }
 
-  override fun writeShort(s: Int): Buffer {
+  actual override fun writeShort(s: Int): Buffer {
     val tail = writableSegment(2)
     val data = tail.data
     var limit = tail.limit
@@ -1137,9 +1137,9 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     return this
   }
 
-  override fun writeShortLe(s: Int) = writeShort(s.toShort().reverseBytes().toInt())
+  actual override fun writeShortLe(s: Int) = writeShort(s.toShort().reverseBytes().toInt())
 
-  override fun writeInt(i: Int): Buffer {
+  actual override fun writeInt(i: Int): Buffer {
     val tail = writableSegment(4)
     val data = tail.data
     var limit = tail.limit
@@ -1152,9 +1152,9 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     return this
   }
 
-  override fun writeIntLe(i: Int) = writeInt(i.reverseBytes())
+  actual override fun writeIntLe(i: Int) = writeInt(i.reverseBytes())
 
-  override fun writeLong(v: Long): Buffer {
+  actual override fun writeLong(v: Long): Buffer {
     val tail = writableSegment(8)
     val data = tail.data
     var limit = tail.limit
@@ -1171,9 +1171,9 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     return this
   }
 
-  override fun writeLongLe(v: Long) = writeLong(v.reverseBytes())
+  actual override fun writeLongLe(v: Long) = writeLong(v.reverseBytes())
 
-  override fun writeDecimalLong(v: Long): Buffer {
+  actual override fun writeDecimalLong(v: Long): Buffer {
     var v = v
     if (v == 0L) {
       // Both a shortcut and required since the following code can't handle zero.
@@ -1239,7 +1239,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     return this
   }
 
-  override fun writeHexadecimalUnsignedLong(v: Long): Buffer {
+  actual override fun writeHexadecimalUnsignedLong(v: Long): Buffer {
     var v = v
     if (v == 0L) {
       // Both a shortcut and required since the following code can't handle zero.
@@ -1456,7 +1456,7 @@ class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
   }
 
   @Throws(IOException::class)
-  override fun indexOf(bytes: ByteString) = indexOf(bytes, 0)
+  override fun indexOf(bytes: ByteString): Long = indexOf(bytes, 0)
 
   @Throws(IOException::class)
   override fun indexOf(bytes: ByteString, fromIndex: Long): Long {
