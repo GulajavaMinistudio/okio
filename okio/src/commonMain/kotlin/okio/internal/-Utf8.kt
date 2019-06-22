@@ -16,6 +16,7 @@
 
 package okio.internal
 
+import okio.ArrayIndexOutOfBoundsException
 import okio.processUtf8Bytes
 import okio.processUtf16Chars
 
@@ -23,11 +24,14 @@ import okio.processUtf16Chars
 // to everything else. Putting them in this file, `-Utf8.kt`, makes them invisible to
 // Java but still visible to Kotlin.
 
-fun ByteArray.commonToUtf8String(): String {
-  val chars = CharArray(size)
+fun ByteArray.commonToUtf8String(beginIndex: Int = 0, endIndex: Int = size): String {
+  if (beginIndex < 0 || endIndex > size || beginIndex > endIndex) {
+    throw ArrayIndexOutOfBoundsException("size=$size beginIndex=$beginIndex endIndex=$endIndex")
+  }
+  val chars = CharArray(endIndex - beginIndex)
 
   var length = 0
-  processUtf16Chars(0, size) { c ->
+  processUtf16Chars(beginIndex, endIndex) { c ->
     chars[length++] = c
   }
 

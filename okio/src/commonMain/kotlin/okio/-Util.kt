@@ -18,6 +18,7 @@
 
 package okio
 
+import okio.internal.HEX_DIGITS
 import kotlin.jvm.JvmName
 
 internal fun checkOffsetAndCount(size: Long, offset: Long, byteCount: Long) {
@@ -87,4 +88,39 @@ internal fun arrayRangeEquals(
     if (a[i + aOffset] != b[i + bOffset]) return false
   }
   return true
+}
+
+internal fun Byte.toHexString(): String {
+  val result = CharArray(4)
+  result[0] = '0'
+  result[1] = 'x'
+  result[2] = HEX_DIGITS[this shr 4 and 0xf]
+  result[3] = HEX_DIGITS[this       and 0xf] // ktlint-disable no-multi-spaces
+  return String(result)
+}
+
+internal fun Int.toHexString(): String {
+  val result = CharArray(10)
+  result[2] = HEX_DIGITS[this shr 28 and 0xf]
+  result[3] = HEX_DIGITS[this shr 24 and 0xf]
+  result[4] = HEX_DIGITS[this shr 20 and 0xf]
+  result[5] = HEX_DIGITS[this shr 16 and 0xf]
+  result[6] = HEX_DIGITS[this shr 12 and 0xf]
+  result[7] = HEX_DIGITS[this shr 8  and 0xf] // ktlint-disable no-multi-spaces
+  result[8] = HEX_DIGITS[this shr 4  and 0xf] // ktlint-disable no-multi-spaces
+  result[9] = HEX_DIGITS[this        and 0xf] // ktlint-disable no-multi-spaces
+
+  // Find the first non-zero index
+  var i = 2
+  while (i < 10) {
+    if (result[i] != '0') break
+    i++
+  }
+
+  // shift and insert "0x"
+  i -= 2
+  result[i] = '0'
+  result[i + 1] = 'x'
+
+  return String(result, i, 10 - i)
 }

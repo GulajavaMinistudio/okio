@@ -1,15 +1,16 @@
 apply plugin: 'org.jetbrains.kotlin.multiplatform'
 
 kotlin {
-  // jvmWithJava is getting deprecated but it's not clear what the replacement is:
-  // https://youtrack.jetbrains.com/issue/KT-26256 
-  targetFromPreset(presets.jvmWithJava, 'jvm')
+  jvm {
+    withJava()
+  }
   js() {
     configure([compilations.main, compilations.test]) {
       tasks.getByName(compileKotlinTaskName).kotlinOptions {
         moduleKind = "commonjs"
       }
     }
+    nodejs()
   }
   iosX64() {
     binaries {
@@ -50,11 +51,6 @@ kotlin {
         implementation deps.kotlin.test.jdk
       }
     }
-    test {
-      // Not required, but helps IntelliJ configure inter-project dependencies:
-      // https://youtrack.jetbrains.com/issue/KT-31179
-      dependsOn jvmTest
-    }
     jsMain {
       dependencies {
         api deps.kotlin.stdLib.js
@@ -81,15 +77,5 @@ kotlin {
   }
 }
 
-// TODO(egorand): Remove when https://github.com/srs/gradle-node-plugin/issues/301 is fixed
-repositories.whenObjectAdded {
-  if (it instanceof IvyArtifactRepository) {
-    metadataSources {
-      artifact()
-    }
-  }
-}
-
-apply from: 'js/build.gradle'
 apply from: 'jvm/jvm.gradle'
 apply from: "$rootDir/gradle/gradle-mvn-mpp-push.gradle"
