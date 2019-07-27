@@ -15,7 +15,6 @@
  */
 package okio
 
-import okio.internal.HEX_DIGIT_BYTES
 import okio.internal.commonClear
 import okio.internal.commonCompleteSegmentByteCount
 import okio.internal.commonCopyTo
@@ -30,7 +29,9 @@ import okio.internal.commonReadAll
 import okio.internal.commonReadByte
 import okio.internal.commonReadByteArray
 import okio.internal.commonReadByteString
+import okio.internal.commonReadDecimalLong
 import okio.internal.commonReadFully
+import okio.internal.commonReadHexadecimalUnsignedLong
 import okio.internal.commonReadInt
 import okio.internal.commonReadLong
 import okio.internal.commonReadShort
@@ -45,6 +46,7 @@ import okio.internal.commonWrite
 import okio.internal.commonWriteAll
 import okio.internal.commonWriteByte
 import okio.internal.commonWriteDecimalLong
+import okio.internal.commonWriteHexadecimalUnsignedLong
 import okio.internal.commonWriteInt
 import okio.internal.commonWriteLong
 import okio.internal.commonWriteShort
@@ -63,19 +65,6 @@ import java.security.MessageDigest
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-/**
- * A collection of bytes in memory.
- *
- * **Moving data from one buffer to another is fast.** Instead of copying bytes from one place in
- * memory to another, this class just changes ownership of the underlying byte arrays.
- *
- * **This buffer grows with your data.** Just like ArrayList, each buffer starts small. It consumes
- * only the memory it needs to.
- *
- * **This buffer pools its byte arrays.** When you allocate a byte array in Java, the runtime must
- * zero-fill the requested array before returning it to you. Even if you're going to write over that
- * space anyway. This class avoids zero-fill and GC churn by pooling byte arrays.
- */
 actual class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
   @JvmField internal actual var head: Segment? = null
 
@@ -177,17 +166,12 @@ actual class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     return this
   }
 
-  /** Copy `byteCount` bytes from this, starting at `offset`, to `out`.  */
   actual fun copyTo(
     out: Buffer,
     offset: Long,
     byteCount: Long
   ): Buffer = commonCopyTo(out, offset, byteCount)
 
-  /**
-   * Overload of [copyTo] with byteCount = size - offset, work around for
-   *  https://youtrack.jetbrains.com/issue/KT-30847
-   */
   actual fun copyTo(
     out: Buffer,
     offset: Long
@@ -252,16 +236,11 @@ actual class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     }
   }
 
-  /**
-   * Returns the number of bytes in segments that are not writable. This is the number of bytes that
-   * can be flushed immediately to an underlying sink without harming throughput.
-   */
   actual fun completeSegmentByteCount(): Long = commonCompleteSegmentByteCount()
 
   @Throws(EOFException::class)
   override fun readByte(): Byte = commonReadByte()
 
-  /** Returns the byte at `pos`.  */
   @JvmName("getByte")
   actual operator fun get(pos: Long): Byte = commonGet(pos)
 
@@ -284,126 +263,10 @@ actual class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
   override fun readLongLe() = readLong().reverseBytes()
 
   @Throws(EOFException::class)
-  override fun readDecimalLong(): Long {
-    if (size == 0L) throw EOFException()
-
-    // This value is always built negatively in order to accommodate Long.MIN_VALUE.
-    var value = 0L
-    var seen = 0
-    var negative = false
-    var done = false
-
-    val overflowZone = Long.MIN_VALUE / 10L
-    var overflowDigit = Long.MIN_VALUE % 10L + 1
-
-    do {
-      val segment = head!!
-
-      val data = segment.data
-      var pos = segment.pos
-      val limit = segment.limit
-
-      while (pos < limit) {
-        val b = data[pos]
-        if (b >= '0'.toByte() && b <= '9'.toByte()) {
-          val digit = '0'.toByte() - b
-
-          // Detect when the digit would cause an overflow.
-          if (value < overflowZone || value == overflowZone && digit < overflowDigit) {
-            val buffer = Buffer().writeDecimalLong(value).writeByte(b.toInt())
-            if (!negative) buffer.readByte() // Skip negative sign.
-            throw NumberFormatException("Number too large: ${buffer.readUtf8()}")
-          }
-          value *= 10L
-          value += digit.toLong()
-        } else if (b == '-'.toByte() && seen == 0) {
-          negative = true
-          overflowDigit -= 1
-        } else {
-          if (seen == 0) {
-            throw NumberFormatException(
-                "Expected leading [0-9] or '-' character but was 0x${Integer.toHexString(
-                    b.toInt())}")
-          }
-          // Set a flag to stop iteration. We still need to run through segment updating below.
-          done = true
-          break
-        }
-        pos++
-        seen++
-      }
-
-      if (pos == limit) {
-        head = segment.pop()
-        SegmentPool.recycle(segment)
-      } else {
-        segment.pos = pos
-      }
-    } while (!done && head != null)
-
-    size -= seen.toLong()
-    return if (negative) value else -value
-  }
+  override fun readDecimalLong(): Long = commonReadDecimalLong()
 
   @Throws(EOFException::class)
-  override fun readHexadecimalUnsignedLong(): Long {
-    if (size == 0L) throw EOFException()
-
-    var value = 0L
-    var seen = 0
-    var done = false
-
-    do {
-      val segment = head!!
-
-      val data = segment.data
-      var pos = segment.pos
-      val limit = segment.limit
-
-      while (pos < limit) {
-        val digit: Int
-
-        val b = data[pos]
-        if (b >= '0'.toByte() && b <= '9'.toByte()) {
-          digit = b - '0'.toByte()
-        } else if (b >= 'a'.toByte() && b <= 'f'.toByte()) {
-          digit = b - 'a'.toByte() + 10
-        } else if (b >= 'A'.toByte() && b <= 'F'.toByte()) {
-          digit = b - 'A'.toByte() + 10 // We never write uppercase, but we support reading it.
-        } else {
-          if (seen == 0) {
-            throw NumberFormatException(
-                "Expected leading [0-9a-fA-F] character but was 0x${Integer.toHexString(
-                    b.toInt())}")
-          }
-          // Set a flag to stop iteration. We still need to run through segment updating below.
-          done = true
-          break
-        }
-
-        // Detect when the shift will overflow.
-        if (value and -0x1000000000000000L != 0L) {
-          val buffer = Buffer().writeHexadecimalUnsignedLong(value).writeByte(b.toInt())
-          throw NumberFormatException("Number too large: " + buffer.readUtf8())
-        }
-
-        value = value shl 4
-        value = value or digit.toLong()
-        pos++
-        seen++
-      }
-
-      if (pos == limit) {
-        head = segment.pop()
-        SegmentPool.recycle(segment)
-      } else {
-        segment.pos = pos
-      }
-    } while (!done && head != null)
-
-    size -= seen.toLong()
-    return value
-  }
+  override fun readHexadecimalUnsignedLong(): Long = commonReadHexadecimalUnsignedLong()
 
   override fun readByteString(): ByteString = commonReadByteString()
 
@@ -578,28 +441,8 @@ actual class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
 
   actual override fun writeDecimalLong(v: Long): Buffer = commonWriteDecimalLong(v)
 
-  actual override fun writeHexadecimalUnsignedLong(v: Long): Buffer {
-    var v = v
-    if (v == 0L) {
-      // Both a shortcut and required since the following code can't handle zero.
-      return writeByte('0'.toInt())
-    }
-
-    val width = java.lang.Long.numberOfTrailingZeros(java.lang.Long.highestOneBit(v)) / 4 + 1
-
-    val tail = writableSegment(width)
-    val data = tail.data
-    var pos = tail.limit + width - 1
-    val start = tail.limit
-    while (pos >= start) {
-      data[pos] = HEX_DIGIT_BYTES[(v and 0xF).toInt()]
-      v = v ushr 4
-      pos--
-    }
-    tail.limit += width
-    size += width.toLong()
-    return this
-  }
+  actual override fun writeHexadecimalUnsignedLong(v: Long): Buffer =
+    commonWriteHexadecimalUnsignedLong(v)
 
   internal actual fun writableSegment(minimumCapacity: Int): Segment =
     commonWritableSegment(minimumCapacity)
@@ -726,10 +569,8 @@ actual class Buffer : BufferedSource, BufferedSink, Cloneable, ByteChannel {
     return result
   }
 
-  /** Returns an immutable copy of this buffer as a byte string.  */
   actual fun snapshot(): ByteString = commonSnapshot()
 
-  /** Returns an immutable copy of the first `byteCount` bytes of this buffer as a byte string. */
   actual fun snapshot(byteCount: Int): ByteString = commonSnapshot(byteCount)
 
   @JvmOverloads fun readUnsafe(unsafeCursor: UnsafeCursor = UnsafeCursor()): UnsafeCursor {
