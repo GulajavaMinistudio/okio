@@ -103,13 +103,6 @@ object TestUtil {
   }
 
   @JvmStatic
-  fun repeat(c: Char, count: Int): String {
-    val array = CharArray(count)
-    Arrays.fill(array, c)
-    return String(array)
-  }
-
-  @JvmStatic
   fun assertEquivalent(b1: ByteString, b2: ByteString) {
     // Equals.
     assertTrue(b1 == b2)
@@ -238,7 +231,7 @@ object TestUtil {
     for (s in segments) {
       val offsetInSegment = if (s.length < Segment.SIZE) (Segment.SIZE - s.length) / 2 else 0
       val buffer = Buffer()
-      buffer.writeUtf8(repeat('_', offsetInSegment))
+      buffer.writeUtf8("_".repeat(offsetInSegment))
       buffer.writeUtf8(s)
       buffer.skip(offsetInSegment.toLong())
       result.write(buffer.clone(), buffer.size)

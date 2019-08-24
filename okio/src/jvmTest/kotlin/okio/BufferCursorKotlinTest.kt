@@ -23,7 +23,6 @@ import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 import org.junit.runners.Parameterized.Parameter
 import org.junit.runners.Parameterized.Parameters
-import java.util.Arrays
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotSame
@@ -94,11 +93,11 @@ class BufferCursorKotlinTest {
     assertTrue(buffer.head == null || buffer.head!!.shared)
 
     val expected = Buffer()
-    expected.writeUtf8(TestUtil.repeat('x', buffer.size.toInt()))
+    expected.writeUtf8("x".repeat(buffer.size.toInt()))
 
     buffer.readAndWriteUnsafe().use { cursor ->
       while (cursor.next() != -1) {
-        Arrays.fill(cursor.data!!, cursor.start, cursor.end, 'x'.toByte())
+        cursor.data!!.fill('x'.toByte(), cursor.start, cursor.end)
       }
     }
 
