@@ -55,13 +55,14 @@ class CommonBufferTest {
       Buffer().writeUtf8("Tyrannosaur").toString()
     )
     assertEquals(
-      "[text=təˈranəˌsôr]", Buffer()
+      "[text=təˈranəˌsôr]",
+      Buffer()
         .write("74c999cb8872616ec999cb8c73c3b472".decodeHex())
         .toString()
     )
     assertEquals(
       "[hex=0000000000000000000000000000000000000000000000000000000000000000000000000000" +
-          "0000000000000000000000000000000000000000000000000000]",
+        "0000000000000000000000000000000000000000000000000000]",
       Buffer().write(ByteArray(64)).toString()
     )
   }
@@ -88,24 +89,24 @@ class CommonBufferTest {
     val buffer = Buffer()
 
     // Take 2 * MAX_SIZE segments. This will drain the pool, even if other tests filled it.
-    buffer.write(ByteArray(SegmentPool.MAX_SIZE.toInt()))
-    buffer.write(ByteArray(SegmentPool.MAX_SIZE.toInt()))
+    buffer.write(ByteArray(SegmentPool.MAX_SIZE))
+    buffer.write(ByteArray(SegmentPool.MAX_SIZE))
     assertEquals(0, SegmentPool.byteCount)
 
     // Recycle MAX_SIZE segments. They're all in the pool.
-    buffer.skip(SegmentPool.MAX_SIZE)
+    buffer.skip(SegmentPool.MAX_SIZE.toLong())
     assertEquals(SegmentPool.MAX_SIZE, SegmentPool.byteCount)
 
     // Recycle MAX_SIZE more segments. The pool is full so they get garbage collected.
-    buffer.skip(SegmentPool.MAX_SIZE)
+    buffer.skip(SegmentPool.MAX_SIZE.toLong())
     assertEquals(SegmentPool.MAX_SIZE, SegmentPool.byteCount)
 
     // Take MAX_SIZE segments to drain the pool.
-    buffer.write(ByteArray(SegmentPool.MAX_SIZE.toInt()))
+    buffer.write(ByteArray(SegmentPool.MAX_SIZE))
     assertEquals(0, SegmentPool.byteCount)
 
     // Take MAX_SIZE more segments. The pool is drained so these will need to be allocated.
-    buffer.write(ByteArray(SegmentPool.MAX_SIZE.toInt()))
+    buffer.write(ByteArray(SegmentPool.MAX_SIZE))
     assertEquals(0, SegmentPool.byteCount)
   }
 
@@ -128,7 +129,8 @@ class CommonBufferTest {
       listOf(
         Segment.SIZE, Segment.SIZE, Segment.SIZE, 1,
         Segment.SIZE, Segment.SIZE, Segment.SIZE, 1
-      ), segmentSizes
+      ),
+      segmentSizes
     )
   }
 
@@ -253,17 +255,17 @@ class CommonBufferTest {
     buffer.writeUtf8("a")
     buffer.writeUtf8('b'.repeat(Segment.SIZE))
     buffer.writeUtf8("c")
-    assertEquals('a'.toLong(), buffer.get(0).toLong())
-    assertEquals('a'.toLong(), buffer.get(0).toLong()) // getByte doesn't mutate!
-    assertEquals('c'.toLong(), buffer.get(buffer.size - 1).toLong())
-    assertEquals('b'.toLong(), buffer.get(buffer.size - 2).toLong())
-    assertEquals('b'.toLong(), buffer.get(buffer.size - 3).toLong())
+    assertEquals('a'.toLong(), buffer[0].toLong())
+    assertEquals('a'.toLong(), buffer[0].toLong()) // getByte doesn't mutate!
+    assertEquals('c'.toLong(), buffer[buffer.size - 1].toLong())
+    assertEquals('b'.toLong(), buffer[buffer.size - 2].toLong())
+    assertEquals('b'.toLong(), buffer[buffer.size - 3].toLong())
   }
 
   @Test fun getByteOfEmptyBuffer() {
     val buffer = Buffer()
     assertFailsWith<IndexOutOfBoundsException> {
-      buffer.get(0)
+      buffer[0]
     }
   }
 

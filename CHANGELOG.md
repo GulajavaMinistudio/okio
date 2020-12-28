@@ -1,11 +1,68 @@
 Change Log
 ==========
 
+## Version 2.9.0
+
+_2020-10-04_
+
+ * Fix: Don't corrupt the `Buffer` when writing a slice of a segmented `ByteString`. We had a severe
+   bug where `ByteString` instances created with `snapshot()` and `readByteString()` incorrectly
+   adjusted the buffer's size by their full length, not the length of the slice. This would have
+   caused buffer reads to crash! We do not believe data was silently corrupted.
+ * New: `CipherSink` and `CipherSource`. Use these with `javax.crypto.Cipher` to encrypt and decrypt
+   streams of data. This is a low-level encryption API; most applications should use higher-level
+   APIs like TLS when available.
+ * New: Promote hash functions `md5`, `sha1()`, `sha512()`, and `sha256()` to common Kotlin. These
+   are currently only available on `ByteString`, multiplatform support for `HashingSource`,
+   `HashingSink`, and `Buffer` should come in a follow-up release. We wrote and optimized our own
+   implementations of these hash functions in Kotlin. On JVM and Android platforms Okio still uses
+   the platform's built-in hash functions.
+ * New: Support OSGi metadata.
+ * Upgrade: [Kotlin 1.4.10][kotlin_1_4_10].
+
+
+## Version 2.8.0
+
+_2020-08-17_
+
+ * New: Upgrade to Kotlin 1.4.0.
+
+
+## Version 2.7.0
+
+_2020-07-07_
+
+ * New: `Pipe.cancel()` causes in-progress and future reads and writes on the pipe to immediately
+   fail with an `IOException`. The streams may still be canceled normally.
+   
+ * New: Enlarge Okio's internal segment pool from a fixed 64 KiB total to 64 KiB per processor. For
+   example, on an Intel i9 8-core/16-thread machine the segment pool now uses up to 1 MiB of memory.  
+ 
+ * New: Migrate from `synchronized` to lock-free when accessing the segment pool. Combined with the
+   change above we saw throughput increase 3x on a synthetic benchmark designed to create
+   contention.
+
+
+## Version 2.6.0
+
+_2020-04-22_
+
+ * New: `InflaterSource.readOrInflate()` is like `InflaterSource.read()`, except it will return 0 if
+   consuming deflated bytes from the underlying stream did not produce new inflated bytes.
+
+
+## Version 2.5.0
+
+_2020-03-20_
+
+ * New: Upgrade to Kotlin 1.3.70.
+
+
 ## Version 2.4.3
 
 _2019-12-20_
 
- * New Upgrade to Kotlin 1.3.61.
+ * New: Upgrade to Kotlin 1.3.61.
 
 
 ## Version 2.4.2
@@ -520,6 +577,7 @@ _2014-04-08_
  * Imported from OkHttp.
 
 
+ [gradle_metadata]: https://blog.gradle.org/gradle-metadata-1.0
+ [kotlin_1_4_10]: https://github.com/JetBrains/kotlin/releases/tag/v1.4.10 
  [maven_provided]: https://maven.apache.org/guides/introduction/introduction-to-dependency-mechanism.html
  [xor_utf8]: https://github.com/square/okio/blob/bbb29c459e5ccf0f286e0b17ccdcacd7ac4bc2a9/okio/src/main/kotlin/okio/Utf8.kt#L302
- [gradle_metadata]: https://blog.gradle.org/gradle-metadata-1.0

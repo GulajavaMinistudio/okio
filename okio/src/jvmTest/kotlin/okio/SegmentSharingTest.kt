@@ -18,10 +18,11 @@ package okio
 import okio.ByteString.Companion.encodeUtf8
 import okio.TestUtil.assertEquivalent
 import okio.TestUtil.bufferWithSegments
+import okio.TestUtil.takeAllPoolSegments
 import org.junit.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
-import kotlin.test.fail
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 /** Tests behavior optimized by sharing segments between buffers and byte strings.  */
 class SegmentSharingTest {
@@ -45,16 +46,12 @@ class SegmentSharingTest {
     assertEquals('y', byteString[xs.length + ys.length - 1].toChar())
     assertEquals('z', byteString[xs.length + ys.length].toChar())
     assertEquals('z', byteString[xs.length + ys.length + zs.length - 1].toChar())
-    try {
+    assertFailsWith<IndexOutOfBoundsException> {
       byteString[-1]
-      fail()
-    } catch (expected: IndexOutOfBoundsException) {
     }
 
-    try {
+    assertFailsWith<IndexOutOfBoundsException> {
       byteString[xs.length + ys.length + zs.length]
-      fail()
-    } catch (expected: IndexOutOfBoundsException) {
     }
   }
 
@@ -74,13 +71,11 @@ class SegmentSharingTest {
     val snapshot = buffer.snapshot()
     assertEquals(xs + ys + zs, snapshot.utf8())
 
-    // While locking the pool, confirm that clearing the buffer doesn't release its segments.
-    synchronized(SegmentPool) {
-      SegmentPool.next = null
-      SegmentPool.byteCount = 0L
-      buffer.clear()
-      assertNull(SegmentPool.next)
-    }
+    // Confirm that clearing the buffer doesn't release its segments.
+    val bufferHead = buffer.head
+    takeAllPoolSegments() // Make room for new segments.
+    buffer.clear()
+    assertTrue(bufferHead !in takeAllPoolSegments())
   }
 
   /**
@@ -92,14 +87,15 @@ class SegmentSharingTest {
     val clone = buffer.clone()
 
     // While locking the pool, confirm that clearing the buffer doesn't release its segments.
-    synchronized(SegmentPool) {
-      SegmentPool.next = null
-      SegmentPool.byteCount = 0L
-      buffer.clear()
-      assertNull(SegmentPool.next)
-      clone.clear()
-      assertNull(SegmentPool.next)
-    }
+    val bufferHead = buffer.head!!
+    takeAllPoolSegments() // Make room for new segments.
+    buffer.clear()
+    assertTrue(bufferHead !in takeAllPoolSegments())
+
+    val cloneHead = clone.head!!
+    takeAllPoolSegments() // Make room for new segments.
+    clone.clear()
+    assertTrue(cloneHead !in takeAllPoolSegments())
   }
 
   @Test fun snapshotJavaSerialization() {

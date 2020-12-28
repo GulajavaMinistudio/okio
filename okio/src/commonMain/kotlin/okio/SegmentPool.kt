@@ -15,47 +15,22 @@
  */
 package okio
 
-import kotlin.native.concurrent.ThreadLocal
-
 /**
  * A collection of unused segments, necessary to avoid GC churn and zero-fill.
  * This pool is a thread-safe static singleton.
  */
-@ThreadLocal
-internal object SegmentPool {
-  /** The maximum number of bytes to pool.  */
-  // TODO: Is 64 KiB a good maximum size? Do we ever have that many idle segments?
-  const val MAX_SIZE = 64 * 1024L // 64 KiB.
+internal expect object SegmentPool {
+  val MAX_SIZE: Int
 
-  /** Singly-linked list of segments.  */
-  var next: Segment? = null
+  /**
+   * For testing only. Returns a snapshot of the number of bytes currently in the pool. If the pool
+   * is segmented such as by thread, this returns the byte count accessible to the calling thread.
+   */
+  val byteCount: Int
 
-  /** Total bytes in this pool.  */
-  var byteCount = 0L
+  /** Return a segment for the caller's use. */
+  fun take(): Segment
 
-  fun take(): Segment {
-    synchronized(this) {
-      next?.let { result ->
-        next = result.next
-        result.next = null
-        byteCount -= Segment.SIZE
-        return result
-      }
-    }
-    return Segment() // Pool is empty. Don't zero-fill while holding a lock.
-  }
-
-  fun recycle(segment: Segment) {
-    require(segment.next == null && segment.prev == null)
-    if (segment.shared) return // This segment cannot be recycled.
-
-    synchronized(this) {
-      if (byteCount + Segment.SIZE > MAX_SIZE) return // Pool is full.
-      byteCount += Segment.SIZE
-      segment.next = next
-      segment.limit = 0
-      segment.pos = segment.limit
-      next = segment
-    }
-  }
+  /** Recycle a segment that the caller no longer needs. */
+  fun recycle(segment: Segment)
 }
