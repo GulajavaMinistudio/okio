@@ -15,7 +15,7 @@
  */
 package okio
 
-import okio.Path.Companion.toPath
+import okio.internal.toPath
 import platform.posix.errno
 import platform.posix.free
 import platform.posix.mkdir
@@ -24,26 +24,26 @@ import platform.posix.remove
 import platform.posix.rename
 import platform.posix.timespec
 
-internal actual val VARIANT_DIRECTORY_SEPARATOR = "/"
+internal actual val PLATFORM_DIRECTORY_SEPARATOR = "/"
 
-@ExperimentalFilesystem
-internal actual fun PosixSystemFilesystem.variantDelete(path: Path) {
+@ExperimentalFileSystem
+internal actual fun PosixFileSystem.variantDelete(path: Path) {
   val result = remove(path.toString())
   if (result != 0) {
-    throw IOException(errnoString(errno))
+    throw errnoToIOException(errno)
   }
 }
 
-@ExperimentalFilesystem
-internal actual fun PosixSystemFilesystem.variantMkdir(dir: Path): Int {
+@ExperimentalFileSystem
+internal actual fun PosixFileSystem.variantMkdir(dir: Path): Int {
   return mkdir(dir.toString(), 0b111111111 /* octal 777 */)
 }
 
-@ExperimentalFilesystem
-internal actual fun PosixSystemFilesystem.variantCanonicalize(path: Path): Path {
+@ExperimentalFileSystem
+internal actual fun PosixFileSystem.variantCanonicalize(path: Path): Path {
   // Note that realpath() fails if the file doesn't exist.
   val fullpath = realpath(path.toString(), null)
-    ?: throw IOException(errnoString(errno))
+    ?: throw errnoToIOException(errno)
   try {
     return Buffer().writeNullTerminated(fullpath).toPath()
   } finally {
@@ -51,14 +51,14 @@ internal actual fun PosixSystemFilesystem.variantCanonicalize(path: Path): Path 
   }
 }
 
-@ExperimentalFilesystem
-internal actual fun PosixSystemFilesystem.variantMove(
+@ExperimentalFileSystem
+internal actual fun PosixFileSystem.variantMove(
   source: Path,
   target: Path
 ) {
   val result = rename(source.toString(), target.toString())
   if (result != 0) {
-    throw IOException(errnoString(errno))
+    throw errnoToIOException(errno)
   }
 }
 

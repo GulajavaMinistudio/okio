@@ -1,6 +1,35 @@
 Change Log
 ==========
 
+## Version 3.0.0-alpha.1
+
+_2021-01-07_
+
+* New: Experimental file system API. The `Path`, `FileMetadata`, `FileSystem` and
+  `ForwardingFileSystem` types are subject to API changes in a future release.
+* New: Experimental `okio-fakefilesystem` artifact.
+
+
+## Version 2.10.0
+
+_2021-01-07_
+
+* New: Support Windows (mingwX64) in multiplatform.
+* New: Support watchOS (watchosArm32, watchosArm64, watchosX86) in multiplatform.
+* New: Support `HashingSource`, `HashingSink`, buffer hash functions, and `UnsafeCursor` on non-JVM
+  platforms. Previously these were all JVM-only.
+* New: Implement `Closeable` on `Sink` and `Source` on non-JVM platforms. Okio now includes a
+  multiplatform `okio.Closeable` interface and corresponding `use {}` extension. Closing resources
+  when you're done with them shouldn't be JVM-only!
+* New: `Sink.hashingSink` and `Source.hashingSource` functions that accept
+  `java.security.MessageDigest` and `javax.crypto.Mac` instances. Use these when your hash function
+  isn't built-in.
+* Fix: Don't crash with a `ShortBufferException` in `CipherSink` and `CipherSource` on Android.
+  (Android may throw a `ShortBufferException` even if the buffer is not too short. We now
+  avoid this problem!)
+* Upgrade: [Kotlin 1.4.20][kotlin_1_4_20].
+
+
 ## Version 2.9.0
 
 _2020-10-04_
@@ -578,6 +607,7 @@ _2014-04-08_
 
 
  [gradle_metadata]: https://blog.gradle.org/gradle-metadata-1.0
+ [kotlin_1_4_20]: https://github.com/JetBrains/kotlin/releases/tag/v1.4.20 
  [kotlin_1_4_10]: https://github.com/JetBrains/kotlin/releases/tag/v1.4.10 
  [maven_provided]: https://maven.apache.org/guides/introduction/introduction-to-dependency-mechanism.html
  [xor_utf8]: https://github.com/square/okio/blob/bbb29c459e5ccf0f286e0b17ccdcacd7ac4bc2a9/okio/src/main/kotlin/okio/Utf8.kt#L302

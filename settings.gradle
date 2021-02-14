@@ -1,7 +1,8 @@
 rootProject.name = 'okio-parent'
 
 include ':okio'
-include ':okio-testing'
+include ':okio-fakefilesystem'
+include ':okio-zipfilesystem'
 include ':okio:jvm:japicmp'
 include ':okio:jvm:jmh'
 include ':samples'

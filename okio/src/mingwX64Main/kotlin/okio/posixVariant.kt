@@ -35,10 +35,10 @@ import platform.posix.rmdir
 import platform.windows.MOVEFILE_REPLACE_EXISTING
 import platform.windows.MoveFileExA
 
-internal actual val VARIANT_DIRECTORY_SEPARATOR = "\\"
+internal actual val PLATFORM_DIRECTORY_SEPARATOR = "\\"
 
-@ExperimentalFilesystem
-internal actual fun PosixSystemFilesystem.variantDelete(path: Path) {
+@ExperimentalFileSystem
+internal actual fun PosixFileSystem.variantDelete(path: Path) {
   val pathString = path.toString()
 
   if (remove(pathString) == 0) return
@@ -48,35 +48,37 @@ internal actual fun PosixSystemFilesystem.variantDelete(path: Path) {
     if (rmdir(pathString) == 0) return
   }
 
-  throw IOException(errnoString(EACCES))
+  throw errnoToIOException(EACCES)
 }
 
-@ExperimentalFilesystem
-internal actual fun PosixSystemFilesystem.variantMkdir(dir: Path): Int {
+@ExperimentalFileSystem
+internal actual fun PosixFileSystem.variantMkdir(dir: Path): Int {
   return mkdir(dir.toString())
 }
 
-@ExperimentalFilesystem
-internal actual fun PosixSystemFilesystem.variantCanonicalize(path: Path): Path {
+@ExperimentalFileSystem
+internal actual fun PosixFileSystem.variantCanonicalize(path: Path): Path {
   // Note that _fullpath() returns normally if the file doesn't exist.
   val fullpath = _fullpath(null, path.toString(), PATH_MAX)
-    ?: throw IOException(errnoString(errno))
+    ?: throw errnoToIOException(errno)
   try {
     val pathString = Buffer().writeNullTerminated(fullpath).readUtf8()
-    if (platform.posix.access(pathString, 0) != 0 && errno == ENOENT) throw IOException("no such file")
+    if (platform.posix.access(pathString, 0) != 0 && errno == ENOENT) {
+      throw FileNotFoundException("no such file")
+    }
     return pathString.toPath()
   } finally {
     free(fullpath)
   }
 }
 
-@ExperimentalFilesystem
-internal actual fun PosixSystemFilesystem.variantMetadataOrNull(path: Path): FileMetadata? {
+@ExperimentalFileSystem
+internal actual fun PosixFileSystem.variantMetadataOrNull(path: Path): FileMetadata? {
   return memScoped {
     val stat = alloc<_stat64>()
     if (_stat64(path.toString(), stat.ptr) != 0) {
       if (errno == ENOENT) return null
-      throw IOException(errnoString(errno))
+      throw errnoToIOException(errno)
     }
     return@memScoped FileMetadata(
       isRegularFile = stat.st_mode.toInt() and S_IFMT == S_IFREG,
@@ -89,9 +91,9 @@ internal actual fun PosixSystemFilesystem.variantMetadataOrNull(path: Path): Fil
   }
 }
 
-@ExperimentalFilesystem
-internal actual fun PosixSystemFilesystem.variantMove(source: Path, target: Path) {
+@ExperimentalFileSystem
+internal actual fun PosixFileSystem.variantMove(source: Path, target: Path) {
   if (MoveFileExA(source.toString(), target.toString(), MOVEFILE_REPLACE_EXISTING) == 0) {
-    throw IOException(lastErrorString())
+    throw lastErrorToIOException()
   }
 }

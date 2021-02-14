@@ -15,12 +15,10 @@
  */
 package okio
 
-import okio.ByteString.Companion.EMPTY
-import okio.ByteString.Companion.encodeUtf8
 import okio.Path.Companion.toPath
 
 /**
- * A hierarchical address on a filesystem. A path is an identifier only; a [Filesystem] is required
+ * A hierarchical address on a file system. A path is an identifier only; a [FileSystem] is required
  * to access the file that a path refers to, if any.
  *
  * UNIX and Windows Paths
@@ -42,20 +40,20 @@ import okio.Path.Companion.toPath
  *   ‘fully-qualified path’ is a synonym of ‘absolute path’.
  *
  * * **Relative paths** are everything else. On their own, relative paths do not identify a
- *   location on a filesystem; they are relative to the system's current working directory. Use
- *   [Filesystem.canonicalize] to convert a relative path to its absolute path on a particular
- *   filesystem.
+ *   location on a file system; they are relative to the system's current working directory. Use
+ *   [FileSystem.canonicalize] to convert a relative path to its absolute path on a particular
+ *   file system.
  *
  * There are some special cases when working with relative paths.
  *
  * On Windows, each volume (like `A:\` and `C:\`) has its own current working directory. A path
- * prefixed with a volume letter and colon but no slash (like `A:essay.doc`) is relative to the
+ * prefixed with a volume letter and colon but no slash (like `A:letter.doc`) is relative to the
  * working directory on the named volume. For example, if the working directory on `A:\` is
- * `A:\jessewilson`, then the path `A:essay.doc` resolves to `A:\jessewilson\essay.doc`.
+ * `A:\jesse`, then the path `A:letter.doc` resolves to `A:\jesse\letter.doc`.
  *
  * The path string `C:\Windows` is an absolute path when following Windows rules and a relative
  * path when following UNIX rules. For example, if the current working directory is
- * `/Users/jwilson`, then `C:\Windows` resolves to `/Users/jwilson/C:/Windows`.
+ * `/Users/jesse`, then `C:\Windows` resolves to `/Users/jesse/C:/Windows`.
  *
  * This class decides which rules to follow by inspecting the first slash character in the path
  * string. If the path contains no slash characters, it uses the host platform's rules. Or you may
@@ -74,7 +72,7 @@ import okio.Path.Companion.toPath
  *  * If the segment is `..`, then the the path must be relative. All `..` segments precede all
  *    other segments.
  *
- * The only path that ends with `/` is the filesystem root, `/`. The dot path `.` is a relative
+ * The only path that ends with `/` is the file system root, `/`. The dot path `.` is a relative
  * path that resolves to whichever path it is resolved against.
  *
  * The [name] is the last segment in a path. It is typically a file or directory name, like
@@ -84,41 +82,65 @@ import okio.Path.Companion.toPath
  *  * `.` is the name of the identity relative path (full path `.`).
  *  * `..` is the name of a path consisting of only `..` segments (such as `../../..`).
  *
+ * Comparing Paths
+ * ---------------
+ *
+ * Path implements [Comparable], [equals], and [hashCode]. If two paths are equal then they operate
+ * on the same file on the file system.
+ *
+ * Note that the converse is not true: **if two paths are non-equal, they may still resolve to the
+ * same file on the file system.** Here are some of the ways non-equal paths resolve to the same
+ * file:
+ *
+ *  * **Case differences.** The default file system on macOS is case-insensitive. The paths
+ *    `/Users/jesse/notes.txt` and `/USERS/JESSE/NOTES.TXT` are non-equal but these paths resolve to
+ *    the same file.
+ *  * **Mounting differences.** Volumes may be mounted at multiple paths. On macOS,
+ *    `/Users/jesse/notes.txt`  and `/Volumes/Macintosh HD/Users/jesse/notes.txt` typically resolve
+ *    to the same file. On Windows, `C:\project\notes.txt` and `\\localhost\c$\project\notes.txt`
+ *    typically resolve to the same file.
+ *  * **Hard links.** UNIX file systems permit multiple paths to refer for same file. The paths may
+ *    be wildly different, like `/Users/jesse/bruce_wayne.vcard` and
+ *    `/Users/jesse/batman.vcard`, but changes via either path are reflected in both.
+ *  * **Symlinks.** Symlinks permit multiple paths and directories to refer to the same file. On
+ *     macOS `/tmp` is symlinked to `/private/tmp`, so `/tmp/notes.txt` and `/private/tmp/notes.txt`
+ *     resolve to the same file.
+ *
+ * To test whether two paths refer to the same file, try [FileSystem.canonicalize] first. This
+ * follows symlinks and looks up the preserved casing for case-insensitive case-preserved paths.
+ * **This method does not guarantee a unique result, however.** For example, each hard link to a
+ * file may return its own canonical path.
+ *
+ * Paths are sorted in case-sensitive order.
+ *
  * Sample Paths
  * ------------
  *
- * | Path                         | Parent             | Name          | Notes                          |
- * | :--------------------------- | :----------------- | :------------ | :----------------------------- |
- * | `/`                          | null               | (empty)       | root                           |
- * | `/home/jesse/notes.txt`      | `/home/jesse`      | `notes.txt`   | absolute path                  |
- * | `project/notes.txt`          | `project`          | `notes.txt`   | relative path                  |
- * | `../../project/notes.txt`    | `../../project`    | `notes.txt`   | relative path with traversal   |
- * | `../../..`                   | null               | `..`          | relative path with traversal   |
- * | `.`                          | null               | `.`           | current working directory      |
- * | `C:\`                        | null               | (empty)       | volume root (Windows)          |
- * | `C:\Windows\notepad.exe`     | `C:\Windows`       | `notepad.exe` | volume absolute path (Windows) |
- * | `\`                          | null               | (empty)       | absolute path (Windows)        |
- * | `\Windows\notepad.exe`       | `\Windows`         | `notepad.exe` | absolute path (Windows)        |
- * | `C:`                         | null               | (empty)       | volume-relative path (Windows) |
- * | `C:project\notes.txt`        | `C:project`        | `notes.txt`   | volume-relative path (Windows) |
- * | `\\server`                   | null               | `server`      | UNC server (Windows)           |
- * | `\\server\project\notes.txt` | `\\server\project` | `notes.txt`   | UNC absolute path (Windows)    |
+ * <table>
+ * <tr><th> Path                         <th> Parent             <th> Name          <th> Notes                          </tr>
+ * <tr><td> `/`                          <td> null               <td> (empty)       <td> root                           </tr>
+ * <tr><td> `/home/jesse/notes.txt`      <td> `/home/jesse`      <td> `notes.txt`   <td> absolute path                  </tr>
+ * <tr><td> `project/notes.txt`          <td> `project`          <td> `notes.txt`   <td> relative path                  </tr>
+ * <tr><td> `../../project/notes.txt`    <td> `../../project`    <td> `notes.txt`   <td> relative path with traversal   </tr>
+ * <tr><td> `../../..`                   <td> null               <td> `..`          <td> relative path with traversal   </tr>
+ * <tr><td> `.`                          <td> null               <td> `.`           <td> current working directory      </tr>
+ * <tr><td> `C:\`                        <td> null               <td> (empty)       <td> volume root (Windows)          </tr>
+ * <tr><td> `C:\Windows\notepad.exe`     <td> `C:\Windows`       <td> `notepad.exe` <td> volume absolute path (Windows) </tr>
+ * <tr><td> `\`                          <td> null               <td> (empty)       <td> absolute path (Windows)        </tr>
+ * <tr><td> `\Windows\notepad.exe`       <td> `\Windows`         <td> `notepad.exe` <td> absolute path (Windows)        </tr>
+ * <tr><td> `C:`                         <td> null               <td> (empty)       <td> volume-relative path (Windows) </tr>
+ * <tr><td> `C:project\notes.txt`        <td> `C:project`        <td> `notes.txt`   <td> volume-relative path (Windows) </tr>
+ * <tr><td> `\\server`                   <td> null               <td> `server`      <td> UNC server (Windows)           </tr>
+ * <tr><td> `\\server\project\notes.txt` <td> `\\server\project` <td> `notes.txt`   <td> UNC absolute path (Windows)    </tr>
+ * </table>
  */
-@ExperimentalFilesystem
-class Path private constructor(
-  private val slash: ByteString,
-  private val bytes: ByteString
-) {
-  init {
-    require(slash == SLASH || slash == BACKSLASH)
-  }
+@ExperimentalFileSystem
+expect class Path internal constructor(bytes: ByteString) : Comparable<Path> {
+  internal val bytes: ByteString
 
   val isAbsolute: Boolean
-    get() = bytes.startsWith(slash) ||
-      (volumeLetter != null && bytes.size > 2 && bytes[2] == '\\'.toByte())
 
   val isRelative: Boolean
-    get() = !isAbsolute
 
   /**
    * This is the volume letter like "C" on Windows paths that starts with a volume letter. For
@@ -130,34 +152,17 @@ class Path private constructor(
    * the C: drive.
    */
   val volumeLetter: Char?
-    get() {
-      if (slash != BACKSLASH) return null
-      if (bytes.size < 2) return null
-      if (bytes[1] != ':'.toByte()) return null
-      val c = bytes[0].toChar()
-      if (c !in 'a'..'z' && c !in 'A'..'Z') return null
-      return c
-    }
 
   val nameBytes: ByteString
-    get() {
-      val lastSlash = bytes.lastIndexOf(slash)
-      return when {
-        lastSlash != -1 -> bytes.substring(lastSlash + 1)
-        volumeLetter != null && bytes.size == 2 -> EMPTY // "C:" has no name.
-        else -> bytes
-      }
-    }
 
   val name: String
-    get() = nameBytes.utf8()
 
   /**
    * Returns the path immediately enclosing this path.
    *
    * This returns null if this has no parent. That includes these paths:
    *
-   *  * The filesystem root (`/`)
+   *  * The file system root (`/`)
    *  * The identity relative path (`.`)
    *  * A Windows volume root (like `C:\`)
    *  * A Windows Universal Naming Convention (UNC) root path (`\\server`)
@@ -165,43 +170,13 @@ class Path private constructor(
    *  * A series of relative paths (like `..` and `../..`).
    */
   val parent: Path?
-    get() {
-      if (bytes == DOT || bytes == slash || lastSegmentIsDotDot()) {
-        return null // Terminal path.
-      }
 
-      val lastSlash = bytes.lastIndexOf(slash)
-      when {
-        lastSlash == 2 && volumeLetter != null -> {
-          if (bytes.size == 3) return null // "C:\" has no parent.
-          return Path(slash, bytes.substring(endIndex = 3)) // Keep the trailing '\' in C:\.
-        }
-        lastSlash == 1 && bytes.startsWith(BACKSLASH_BACKSLASH) -> {
-          return null // "\\server" is a UNC path with no parent.
-        }
-        lastSlash == -1 && volumeLetter != null -> {
-          if (bytes.size == 2) return null // "C:" has no parent.
-          return Path(slash, bytes.substring(endIndex = 2)) // C: is volume-relative.
-        }
-        lastSlash == -1 -> {
-          return Path(slash, DOT) // Parent is the current working directory.
-        }
-        lastSlash == 0 -> {
-          return Path(slash, bytes.substring(endIndex = 1)) // Parent is the filesystem root '/'.
-        }
-        else -> {
-          return Path(slash, bytes.substring(endIndex = lastSlash))
-        }
-      }
-    }
-
-  private fun lastSegmentIsDotDot(): Boolean {
-    if (bytes.endsWith(DOT_DOT)) {
-      if (bytes.size == 2) return true // ".." is the whole string.
-      if (bytes.rangeEquals(bytes.size - 3, slash, 0, 1)) return true // Ends with "/.." or "\..".
-    }
-    return false
-  }
+  /**
+   * Returns true if this is an absolute path with no parent. UNIX paths have a single root, `/`.
+   * Each volume on Windows is its own root, like `C:\` and `D:\`. Windows UNC paths like `\\server`
+   * are also roots.
+   */
+  val isRoot: Boolean
 
   /**
    * Returns a path that resolves [child] relative to this path.
@@ -209,9 +184,7 @@ class Path private constructor(
    * If [child] is an [absolute path][isAbsolute] or [has a volume letter][hasVolumeLetter] then
    * this function is equivalent to `child.toPath()`.
    */
-  operator fun div(child: String): Path {
-    return div(Buffer().writeUtf8(child).toPath(slash))
-  }
+  operator fun div(child: String): Path
 
   /**
    * Returns a path that resolves [child] relative to this path.
@@ -219,135 +192,19 @@ class Path private constructor(
    * If [child] is an [absolute path][isAbsolute] or [has a volume letter][hasVolumeLetter] then
    * this function is equivalent to `child.toPath()`.
    */
-  operator fun div(child: Path): Path {
-    if (child.isAbsolute || child.volumeLetter != null) return child
+  operator fun div(child: Path): Path
 
-    val buffer = Buffer()
-    buffer.write(bytes)
-    if (buffer.size > 0) {
-      buffer.write(slash)
-    }
-    buffer.write(child.bytes)
-    return buffer.toPath(directorySeparator = slash)
-  }
+  override fun compareTo(other: Path): Int
 
-  override fun equals(other: Any?): Boolean {
-    return other is Path && other.bytes == bytes && other.slash == slash
-  }
+  override fun equals(other: Any?): Boolean
 
-  override fun hashCode() = bytes.hashCode() xor slash.hashCode()
+  override fun hashCode(): Int
 
-  override fun toString() = bytes.utf8()
+  override fun toString(): String
 
   companion object {
-    private val SLASH = "/".encodeUtf8()
-    private val BACKSLASH = "\\".encodeUtf8()
-    private val BACKSLASH_BACKSLASH = "\\".encodeUtf8()
-    private val ANY_SLASH = "/\\".encodeUtf8()
-    private val DOT = ".".encodeUtf8()
-    private val DOT_DOT = "..".encodeUtf8()
+    val DIRECTORY_SEPARATOR: String
 
-    val directorySeparator = DIRECTORY_SEPARATOR
-
-    fun String.toPath(directorySeparator: String? = null): Path =
-      Buffer().writeUtf8(this).toPath(directorySeparator?.toSlash())
-
-    /** Consume the buffer and return it as a path. */
-    internal fun Buffer.toPath(directorySeparator: ByteString? = null): Path {
-      var slash = directorySeparator
-      val result = Buffer()
-
-      // Consume the absolute path prefix, like `/`, `\\`, `C:`, or `C:\` and write the
-      // canonicalized prefix to result.
-      var leadingSlashCount = 0
-      while (rangeEquals(0L, SLASH) || rangeEquals(0L, BACKSLASH)) {
-        val byte = readByte()
-        slash = slash ?: byte.toSlash()
-        leadingSlashCount++
-      }
-      if (leadingSlashCount >= 2 && slash == BACKSLASH) {
-        // This is a Windows UNC path, like \\server\directory\file.txt.
-        result.write(slash)
-        result.write(slash)
-      } else if (leadingSlashCount > 0) {
-        // This is platform-dependent:
-        //  * On UNIX: a absolute path like /home
-        //  * On Windows: this is relative to the current volume, like \Windows.
-        result.write(slash!!)
-      } else {
-        // This path doesn't start with any slash. We must initialize the slash character to use.
-        val limit = indexOfElement(ANY_SLASH)
-        slash = slash ?: when (limit) {
-          -1L -> DIRECTORY_SEPARATOR.toSlash()
-          else -> get(limit).toSlash()
-        }
-        if (startsWithVolumeLetterAndColon(slash)) {
-          if (limit == 2L) {
-            result.write(this, 3L) // Absolute on a named volume, like `C:\`.
-          } else {
-            result.write(this, 2L) // Relative to the named volume, like `C:`.
-          }
-        }
-      }
-
-      val absolute = result.size > 0
-
-      val canonicalParts = mutableListOf<ByteString>()
-      while (!exhausted()) {
-        val limit = indexOfElement(ANY_SLASH)
-
-        val part: ByteString
-        if (limit == -1L) {
-          part = readByteString()
-        } else {
-          part = readByteString(limit)
-          readByte()
-        }
-
-        if (part == DOT_DOT) {
-          if (!absolute && (canonicalParts.isEmpty() || canonicalParts.last() == DOT_DOT)) {
-            canonicalParts.add(part) // '..' doesn't pop '..' for relative paths.
-          } else {
-            canonicalParts.removeLastOrNull()
-          }
-        } else if (part != DOT && part != ByteString.EMPTY) {
-          canonicalParts.add(part)
-        }
-      }
-
-      for (i in 0 until canonicalParts.size) {
-        if (i > 0) result.write(slash)
-        result.write(canonicalParts[i])
-      }
-      if (result.size == 0L) {
-        result.write(DOT)
-      }
-
-      return Path(slash, result.readByteString())
-    }
-
-    private fun String.toSlash(): ByteString {
-      return when (this) {
-        "/" -> SLASH
-        "\\" -> BACKSLASH
-        else -> throw IllegalArgumentException("not a directory separator: $this")
-      }
-    }
-
-    private fun Byte.toSlash(): ByteString {
-      return when (toInt()) {
-        '/'.toInt() -> SLASH
-        '\\'.toInt() -> BACKSLASH
-        else -> throw IllegalArgumentException("not a directory separator: $this")
-      }
-    }
-
-    private fun Buffer.startsWithVolumeLetterAndColon(slash: ByteString): Boolean {
-      if (slash != BACKSLASH) return false
-      if (size < 2) return false
-      if (get(1) != ':'.toByte()) return false
-      val b = get(0).toChar()
-      return b in 'a'..'z' || b in 'A'..'Z'
-    }
+    fun String.toPath(): Path
   }
 }

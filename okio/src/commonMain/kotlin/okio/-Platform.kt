@@ -16,6 +16,12 @@
 
 package okio
 
+@ExperimentalFileSystem
+internal expect val PLATFORM_FILE_SYSTEM: FileSystem
+
+@ExperimentalFileSystem
+internal expect val PLATFORM_TEMPORARY_DIRECTORY: Path
+
 internal expect fun ByteArray.toUtf8String(): String
 
 internal expect fun String.asUtf8ToByteArray(): ByteArray
@@ -25,6 +31,19 @@ expect class ArrayIndexOutOfBoundsException(message: String?) : IndexOutOfBounds
 
 internal expect inline fun <R> synchronized(lock: Any, block: () -> R): R
 
-expect open class IOException(message: String? = null) : Exception
+expect open class IOException(message: String?, cause: Throwable?) : Exception {
+  constructor(message: String? = null)
+}
 
 expect open class EOFException(message: String? = null) : IOException
+
+expect class FileNotFoundException(message: String? = null) : IOException
+
+expect interface Closeable {
+  /**
+   * Closes this object and releases the resources it holds. It is an error to use an object after
+   * it has been closed. It is safe to close an object more than once.
+   */
+  @Throws(IOException::class)
+  fun close()
+}

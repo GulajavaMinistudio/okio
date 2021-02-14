@@ -19,6 +19,8 @@ package okio
 import okio.internal.commonAsUtf8ToByteArray
 import okio.internal.commonToUtf8String
 
+internal expect val PLATFORM_DIRECTORY_SEPARATOR: String
+
 internal actual fun ByteArray.toUtf8String(): String = commonToUtf8String()
 
 internal actual fun String.asUtf8ToByteArray(): ByteArray = commonAsUtf8ToByteArray()
@@ -29,6 +31,18 @@ actual open class ArrayIndexOutOfBoundsException actual constructor(
 
 internal actual inline fun <R> synchronized(lock: Any, block: () -> R): R = block()
 
-actual open class IOException actual constructor(message: String?) : Exception(message)
+actual open class IOException actual constructor(
+  message: String?,
+  cause: Throwable?
+) : Exception(message, cause) {
+  actual constructor(message: String?) : this(message, null)
+}
 
 actual open class EOFException actual constructor(message: String?) : IOException(message)
+
+actual open class FileNotFoundException actual constructor(message: String?) : IOException(message)
+
+actual interface Closeable {
+  @Throws(IOException::class)
+  actual fun close()
+}

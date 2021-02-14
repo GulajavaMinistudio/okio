@@ -19,189 +19,208 @@ import okio.Path.Companion.toPath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-@ExperimentalFilesystem
+@ExperimentalFileSystem
 class PathTest {
   @Test
   fun unixRoot() {
-    val path = "/".toPath("/")
+    val path = "/".toPath()
     assertEquals("/", path.toString())
     assertNull(path.parent)
     assertNull(path.volumeLetter)
     assertEquals("", path.name)
     assertTrue(path.isAbsolute)
+    assertTrue(path.isRoot)
   }
 
   @Test
   fun unixAbsolutePath() {
-    val path = "/home/jesse/todo.txt".toPath("/")
+    val path = "/home/jesse/todo.txt".toPath()
     assertEquals("/home/jesse/todo.txt", path.toString())
-    assertEquals("/home/jesse".toPath("/"), path.parent)
+    assertEquals("/home/jesse".toPath(), path.parent)
     assertNull(path.volumeLetter)
     assertEquals("todo.txt", path.name)
     assertTrue(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
   fun unixRelativePath() {
-    val path = "project/todo.txt".toPath("/")
+    val path = "project/todo.txt".toPath()
     assertEquals("project/todo.txt", path.toString())
-    assertEquals("project".toPath("/"), path.parent)
+    assertEquals("project".toPath(), path.parent)
     assertNull(path.volumeLetter)
     assertEquals("todo.txt", path.name)
     assertFalse(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
   fun unixRelativePathWithDots() {
-    val path = "../../project/todo.txt".toPath("/")
+    val path = "../../project/todo.txt".toPath()
     assertEquals("../../project/todo.txt", path.toString())
-    assertEquals("../../project".toPath("/"), path.parent)
+    assertEquals("../../project".toPath(), path.parent)
     assertNull(path.volumeLetter)
     assertEquals("todo.txt", path.name)
     assertFalse(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
   fun unixRelativeSeriesOfDotDots() {
-    val path = "../../..".toPath("/")
+    val path = "../../..".toPath()
     assertEquals("../../..", path.toString())
     assertNull(path.parent)
     assertNull(path.volumeLetter)
     assertEquals("..", path.name)
     assertFalse(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
   fun unixAbsoluteSeriesOfDotDots() {
-    val path = "/../../..".toPath("/")
+    val path = "/../../..".toPath()
     assertEquals("/", path.toString())
     assertNull(path.parent)
     assertNull(path.volumeLetter)
     assertEquals("", path.name)
     assertTrue(path.isAbsolute)
+    assertTrue(path.isRoot)
   }
 
   @Test
   fun unixAbsoluteSingleDot() {
-    val path = "/.".toPath("/")
+    val path = "/.".toPath()
     assertEquals("/", path.toString())
     assertNull(path.parent)
     assertNull(path.volumeLetter)
     assertEquals("", path.name)
     assertTrue(path.isAbsolute)
+    assertTrue(path.isRoot)
   }
 
   @Test
   fun unixRelativeDoubleDots() {
-    val path = "..".toPath("/")
+    val path = "..".toPath()
     assertEquals("..", path.toString())
     assertNull(path.parent)
     assertNull(path.volumeLetter)
     assertEquals("..", path.name)
     assertFalse(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
   fun unixRelativeSingleDot() {
-    val path = ".".toPath("/")
+    val path = ".".toPath()
     assertEquals(".", path.toString())
     assertNull(path.parent)
     assertNull(path.volumeLetter)
     assertEquals(".", path.name)
     assertFalse(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
   fun windowsVolumeLetter() {
-    val path = "C:\\".toPath("\\")
+    val path = "C:\\".toPath()
     assertEquals("C:\\", path.toString())
     assertNull(path.parent)
     assertEquals('C', path.volumeLetter)
     assertEquals("", path.name)
     assertTrue(path.isAbsolute)
+    assertTrue(path.isRoot)
   }
 
   @Test
   fun windowsAbsolutePathWithVolumeLetter() {
-    val path = "C:\\Windows\\notepad.exe".toPath("\\")
+    val path = "C:\\Windows\\notepad.exe".toPath()
     assertEquals("C:\\Windows\\notepad.exe", path.toString())
-    assertEquals("C:\\Windows".toPath("\\"), path.parent)
+    assertEquals("C:\\Windows".toPath(), path.parent)
     assertEquals('C', path.volumeLetter)
     assertEquals("notepad.exe", path.name)
     assertTrue(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
   fun windowsAbsolutePath() {
-    val path = "\\".toPath("\\")
+    val path = "\\".toPath()
     assertEquals("\\", path.toString())
     assertEquals(null, path.parent)
     assertNull(path.volumeLetter)
     assertEquals("", path.name)
     assertTrue(path.isAbsolute)
+    assertTrue(path.isRoot)
   }
 
   @Test
   fun windowsAbsolutePathWithoutVolumeLetter() {
-    val path = "\\Windows\\notepad.exe".toPath("\\")
+    val path = "\\Windows\\notepad.exe".toPath()
     assertEquals("\\Windows\\notepad.exe", path.toString())
-    assertEquals("\\Windows".toPath("\\"), path.parent)
+    assertEquals("\\Windows".toPath(), path.parent)
     assertNull(path.volumeLetter)
     assertEquals("notepad.exe", path.name)
     assertTrue(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
   fun windowsRelativePathWithVolumeLetter() {
-    val path = "C:Windows\\notepad.exe".toPath("\\")
+    val path = "C:Windows\\notepad.exe".toPath()
     assertEquals("C:Windows\\notepad.exe", path.toString())
-    assertEquals("C:Windows".toPath("\\"), path.parent)
+    assertEquals("C:Windows".toPath(), path.parent)
     assertEquals('C', path.volumeLetter)
     assertEquals("notepad.exe", path.name)
     assertFalse(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
   fun windowsVolumeLetterRelative() {
-    val path = "C:".toPath("\\")
+    val path = "C:".toPath()
     assertEquals("C:", path.toString())
     assertNull(path.parent)
     assertEquals('C', path.volumeLetter)
     assertEquals("", path.name)
     assertFalse(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
   fun windowsRelativePath() {
-    val path = "Windows\\notepad.exe".toPath("\\")
+    val path = "Windows\\notepad.exe".toPath()
     assertEquals("Windows\\notepad.exe", path.toString())
-    assertEquals("Windows".toPath("\\"), path.parent)
+    assertEquals("Windows".toPath(), path.parent)
     assertNull(path.volumeLetter)
     assertEquals("notepad.exe", path.name)
     assertFalse(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
   fun windowsUncServer() {
-    val path = "\\\\server".toPath("\\")
+    val path = "\\\\server".toPath()
     assertEquals("\\\\server", path.toString())
     assertNull(path.parent)
     assertNull(path.volumeLetter)
     assertEquals("server", path.name)
     assertTrue(path.isAbsolute)
+    assertTrue(path.isRoot)
   }
 
   @Test
   fun windowsUncAbsolutePath() {
-    val path = "\\\\server\\project\\notes.txt".toPath("\\")
+    val path = "\\\\server\\project\\notes.txt".toPath()
     assertEquals("\\\\server\\project\\notes.txt", path.toString())
-    assertEquals("\\\\server\\project".toPath("\\"), path.parent)
+    assertEquals("\\\\server\\project".toPath(), path.parent)
     assertNull(path.volumeLetter)
     assertEquals("notes.txt", path.name)
     assertTrue(path.isAbsolute)
+    assertFalse(path.isRoot)
   }
 
   @Test
@@ -215,28 +234,33 @@ class PathTest {
 
   @Test
   fun relativePathTraversalWithDivOperator() {
-    val cwd = ".".toPath("/")
-    assertEquals("home".toPath("/"), cwd / "home")
-    assertEquals("home/jesse".toPath("/"), cwd / "home" / "jesse")
-    assertEquals("home".toPath("/"), cwd / "home" / "jesse" / "..")
-    assertEquals("home/jake".toPath("/"), cwd / "home" / "jesse" / ".." / "jake")
+    val slash = Path.DIRECTORY_SEPARATOR
+    val cwd = ".".toPath()
+    assertEquals("home".toPath(), cwd / "home")
+    assertEquals("home${slash}jesse".toPath(), cwd / "home" / "jesse")
+    assertEquals("home".toPath(), cwd / "home" / "jesse" / "..")
+    assertEquals("home${slash}jake".toPath(), cwd / "home" / "jesse" / ".." / "jake")
   }
 
   @Test
   fun relativePathTraversalWithDots() {
-    val cwd = ".".toPath("/")
-    assertEquals("..".toPath("/"), cwd / "..")
-    assertEquals("../..".toPath("/"), cwd / ".." / "..")
-    assertEquals("../../etc".toPath("/"), cwd / ".." / ".." / "etc")
-    assertEquals("../../etc/passwd".toPath("/"), cwd / ".." / ".." / "etc" / "passwd")
+    val slash = Path.DIRECTORY_SEPARATOR
+    val cwd = ".".toPath()
+    assertEquals("..".toPath(), cwd / "..")
+    assertEquals("..$slash..".toPath(), cwd / ".." / "..")
+    assertEquals("..$slash..${slash}etc".toPath(), cwd / ".." / ".." / "etc")
+    assertEquals(
+      "..$slash..${slash}etc${slash}passwd".toPath(),
+      cwd / ".." / ".." / "etc" / "passwd"
+    )
   }
 
   @Test
   fun pathTraversalBaseIgnoredIfChildIsAnAbsolutePath() {
-    assertEquals("/home".toPath(), "".toPath("/") / "/home")
-    assertEquals("/home".toPath(), "relative".toPath("/") / "/home")
-    assertEquals("/home".toPath(), "/base".toPath("/") / "/home")
-    assertEquals("/home".toPath(), "/".toPath("/") / "/home")
+    assertEquals("/home".toPath(), "".toPath() / "/home")
+    assertEquals("/home".toPath(), "relative".toPath() / "/home")
+    assertEquals("/home".toPath(), "/base".toPath() / "/home")
+    assertEquals("/home".toPath(), "/".toPath() / "/home")
   }
 
   @Test
@@ -343,5 +367,17 @@ class PathTest {
   fun windowsPathTraversalUp() {
     assertEquals("C:\\z".toPath(), "C:\\x\\y\\..\\..\\..\\z".toPath())
     assertEquals("C:..\\z".toPath(), "C:x\\y\\..\\..\\..\\z".toPath())
+  }
+
+  @Test
+  fun samePathDifferentSlashesAreNotEqual() {
+    assertNotEquals("/a".toPath(), "\\b".toPath())
+    assertNotEquals("a/b".toPath(), "a\\b".toPath())
+  }
+
+  @Test
+  fun samePathNoSlashesAreEqual() {
+    assertEquals("a".toPath().parent!!, "a".toPath().parent!!)
+    assertEquals("a/b".toPath().parent!!, "a\\b".toPath().parent!!)
   }
 }
